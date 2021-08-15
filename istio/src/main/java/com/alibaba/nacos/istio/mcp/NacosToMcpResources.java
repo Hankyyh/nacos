@@ -35,7 +35,6 @@ import istio.networking.v1alpha3.WorkloadEntryOuterClass;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -56,13 +55,27 @@ public class NacosToMcpResources {
     
     private final Map<String, ResourceOuterClass.Resource> resourceMap = new ConcurrentHashMap<>(16);
     
-    private final Map<String, String> checksumMap = new ConcurrentHashMap<>(16);
+    private final Map<String, Long> revisionMap = new ConcurrentHashMap<>(16);
     
     private static final String SERVICE_NAME_SPLITTER = "nacos";
     
     private static final String MESSAGE_TYPE_URL = "type.googleapis.com/istio.networking.v1alpha3.ServiceEntry";
     
     private static final long MCP_PUSH_PERIOD_MILLISECONDS = 10000L;
+    
+    private static final String SEPARATOR = ".";
+    
+    private static final String DEFAULT_SUFFIX = ".DEFAULT-GROUP";
+    
+    private static final String PORT_PARAM = "http";
+    
+    private static final String CLUSTER_PARAM = "cluster";
+    
+    private static final String VIRTUAL_ANNOTATION = "virtual";
+    
+    private static final String DEFAULT_VIRTUAL = "1";
+    
+    private static final String HTTP = "HTTP";
     
     @Autowired
     private NacosMcpOverXdsService nacosMcpOverXdsService;
@@ -102,25 +115,24 @@ public class NacosToMcpResources {
                 }
                 
                 for (Service service : services) {
-                    ServiceInfo serviceInfo = serviceStorage.getData(service);
-                    
                     String convertedName = convertName(service);
                     allServices.add(convertedName);
                     // Service not changed:
-                    if (checksumMap.containsKey(convertedName) && checksumMap.get(convertedName)
-                            .equals(serviceInfo.getChecksum())) {
+                    if (revisionMap.containsKey(convertedName) && revisionMap.get(convertedName)
+                            .equals(service.getRevision())) {
                         continue;
                     }
                     // Update the resource:
+                    ServiceInfo serviceInfo = serviceStorage.getData(service);
                     changed = true;
                     if (!serviceInfo.validate()) {
                         resourceMap.remove(convertedName);
-                        checksumMap.remove(convertedName);
+                        revisionMap.remove(convertedName);
                         continue;
                     }
                     
                     resourceMap.put(convertedName, convertService(service));
-                    checksumMap.put(convertedName, serviceInfo.getChecksum());
+                    revisionMap.put(convertedName, service.getRevision());
                 }
             }
             
@@ -128,7 +140,7 @@ public class NacosToMcpResources {
                 if (!allServices.contains(key)) {
                     changed = true;
                     resourceMap.remove(key);
-                    checksumMap.remove(key);
+                    revisionMap.remove(key);
                 }
             }
             if (!changed) {
@@ -144,10 +156,10 @@ public class NacosToMcpResources {
     
     private String convertName(Service service) {
         if (!Constants.DEFAULT_GROUP.equals(service.getGroup())) {
-            return service.getName() + "." + service.getGroup() + "." + service.getNamespace();
+            return service.getName() + SEPARATOR + service.getGroup() + SEPARATOR + service.getNamespace();
         }
         //DEFAULT_GROUP is invalid for istio,because the istio host only supports: [0-9],[A-Z],[a-z],-,*
-        return service.getName() + ".DEFAULT-GROUP" + "." + service.getNamespace();
+        return service.getName() + DEFAULT_SUFFIX + SEPARATOR + service.getNamespace();
     }
     
     private ResourceOuterClass.Resource convertService(Service service) {
@@ -155,7 +167,7 @@ public class NacosToMcpResources {
         ServiceEntryOuterClass.ServiceEntry.Builder serviceEntryBuilder = ServiceEntryOuterClass.ServiceEntry
                 .newBuilder().setResolution(ServiceEntryOuterClass.ServiceEntry.Resolution.STATIC)
                 .setLocation(ServiceEntryOuterClass.ServiceEntry.Location.MESH_INTERNAL)
-                .addHosts(serviceName + "." + SERVICE_NAME_SPLITTER);
+                .addHosts(serviceName + SEPARATOR + SERVICE_NAME_SPLITTER);
         
         ServiceInfo serviceInfo = serviceStorage.getData(service);
         
@@ -171,17 +183,17 @@ public class NacosToMcpResources {
             }
             Map<String, String> metadata = instance.getMetadata();
             if (StringUtils.isNotEmpty(instance.getClusterName())) {
-                metadata.put("cluster", instance.getClusterName());
+                metadata.put(CLUSTER_PARAM, instance.getClusterName());
             }
             WorkloadEntryOuterClass.WorkloadEntry workloadEntry = WorkloadEntryOuterClass.WorkloadEntry.newBuilder()
                     .setAddress(instance.getIp()).setWeight((int) instance.getWeight()).putAllLabels(metadata)
-                    .putPorts("http", instance.getPort()).build();
+                    .putPorts(PORT_PARAM, instance.getPort()).build();
             
             serviceEntryBuilder.addEndpoints(workloadEntry);
         }
         
         serviceEntryBuilder.addPorts(
-                GatewayOuterClass.Port.newBuilder().setNumber(port).setName("http").setProtocol("HTTP").build());
+                GatewayOuterClass.Port.newBuilder().setNumber(port).setName(PORT_PARAM).setProtocol(HTTP).build());
         
         ServiceEntryOuterClass.ServiceEntry serviceEntry = serviceEntryBuilder.build();
         
@@ -191,7 +203,7 @@ public class NacosToMcpResources {
         Any any = Any.newBuilder().setValue(serviceEntry.toByteString()).setTypeUrl(MESSAGE_TYPE_URL).build();
         MetadataOuterClass.Metadata metadata = MetadataOuterClass.Metadata.newBuilder()
                 .setName(SERVICE_NAME_SPLITTER + "/" + serviceName)
-                .putAllAnnotations(serviceMetadataGetter.getExtendData()).putAnnotations("virtual", "1")
+                .putAllAnnotations(serviceMetadataGetter.getExtendData()).putAnnotations(VIRTUAL_ANNOTATION, DEFAULT_VIRTUAL)
                 .setCreateTime(Timestamp.newBuilder().setSeconds(System.currentTimeMillis() / 1000).build())
                 .setVersion(serviceInfo.getChecksum()).build();
         

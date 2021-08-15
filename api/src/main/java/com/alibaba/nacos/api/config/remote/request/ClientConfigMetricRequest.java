@@ -16,6 +16,7 @@
 
 package com.alibaba.nacos.api.config.remote.request;
 
+import com.alibaba.nacos.api.common.Constants;
 import com.alibaba.nacos.api.remote.request.ServerRequest;
 
 import java.io.Serializable;
@@ -31,11 +32,11 @@ import java.util.Objects;
  */
 public class ClientConfigMetricRequest extends ServerRequest {
     
-    private List<MetricsKey> metricsKeys = new ArrayList<MetricsKey>();
+    private List<MetricsKey> metricsKeys = new ArrayList<>();
     
     @Override
     public String getModule() {
-        return "config";
+        return Constants.Config.CONFIG_MODULE;
     }
     
     public List<MetricsKey> getMetricsKeys() {

@@ -29,7 +29,7 @@ import com.alibaba.nacos.naming.healthcheck.v2.processor.HealthCheckProcessorV2D
 import com.alibaba.nacos.naming.misc.Loggers;
 import com.alibaba.nacos.naming.misc.SwitchDomain;
 import com.alibaba.nacos.sys.utils.ApplicationUtils;
-import org.apache.commons.lang3.RandomUtils;
+import com.alibaba.nacos.common.utils.RandomUtils;
 
 import java.util.Optional;
 
@@ -98,12 +98,12 @@ public class HealthCheckTaskV2 extends AbstractExecuteTask implements NacosHealt
                     ClusterMetadata metadata = getClusterMetadata(each, instancePublishInfo);
                     ApplicationUtils.getBean(HealthCheckProcessorV2Delegate.class).process(this, each, metadata);
                     if (Loggers.EVT_LOG.isDebugEnabled()) {
-                        Loggers.EVT_LOG.debug("[HEALTH-CHECK] schedule health check task: {}", client.getClientId());
+                        Loggers.EVT_LOG.debug("[HEALTH-CHECK-V2] schedule health check task: {}", client.getClientId());
                     }
                 }
             }
         } catch (Throwable e) {
-            Loggers.SRV_LOG.error("[HEALTH-CHECK] error while process health check for {}", client.getClientId(), e);
+            Loggers.SRV_LOG.error("[HEALTH-CHECK-V2] error while process health check for {}", client.getClientId(), e);
         } finally {
             if (!cancelled) {
                 HealthCheckReactor.scheduleCheck(this);

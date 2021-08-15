@@ -51,7 +51,6 @@ public final class MetricsMonitor {
         RAFT_APPLY_READ_TIMER = NacosMeterRegistry.timer("protocol", "raft_apply_read_timer");
         
         List<Tag> tags = new ArrayList<Tag>();
-        tags = new ArrayList<Tag>();
         tags.add(new ImmutableTag("module", "config"));
         tags.add(new ImmutableTag("name", "longConnection"));
         Metrics.gauge("nacos_monitor", tags, longConnection);
@@ -76,5 +75,13 @@ public final class MetricsMonitor {
     
     public static Timer getRaftApplyReadTimer() {
         return RAFT_APPLY_READ_TIMER;
+    }
+    
+    public static DistributionSummary getRaftReadIndexFailed() {
+        return RAFT_READ_INDEX_FAILED;
+    }
+    
+    public static DistributionSummary getRaftFromLeader() {
+        return RAFT_FROM_LEADER;
     }
 }

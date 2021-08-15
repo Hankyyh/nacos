@@ -20,6 +20,7 @@ import com.alibaba.nacos.api.common.Constants;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.naming.utils.NamingUtils;
 import com.alibaba.nacos.common.utils.JacksonUtils;
+import com.alibaba.nacos.naming.constants.FieldsConstants;
 import com.alibaba.nacos.naming.core.v2.ServiceManager;
 import com.alibaba.nacos.naming.core.v2.index.ServiceStorage;
 import com.alibaba.nacos.naming.core.v2.metadata.ClusterMetadata;
@@ -90,8 +91,12 @@ public class ServiceOperatorV2Impl implements ServiceOperator {
     
     @Override
     public ObjectNode queryService(String namespaceId, String serviceName) throws NacosException {
-        ObjectNode result = JacksonUtils.createEmptyJsonNode();
         Service service = getServiceFromGroupedServiceName(namespaceId, serviceName, true);
+        if (!ServiceManager.getInstance().containSingleton(service)) {
+            throw new NacosException(NacosException.INVALID_PARAM,
+                    "service not found, namespace: " + namespaceId + ", serviceName: " + serviceName);
+        }
+        ObjectNode result = JacksonUtils.createEmptyJsonNode();
         ServiceMetadata serviceMetadata = metadataManager.getServiceMetadata(service).orElse(new ServiceMetadata());
         setServiceMetadata(result, serviceMetadata, service);
         ArrayNode clusters = JacksonUtils.createEmptyArrayNode();
@@ -101,24 +106,26 @@ public class ServiceOperatorV2Impl implements ServiceOperator {
                             : new ClusterMetadata();
             clusters.add(newClusterNode(each, clusterMetadata));
         }
-        result.set("clusters", clusters);
+        result.set(FieldsConstants.CLUSTERS, clusters);
         return result;
     }
     
     private void setServiceMetadata(ObjectNode serviceDetail, ServiceMetadata serviceMetadata, Service service) {
-        serviceDetail.put("namespaceId", service.getNamespace());
-        serviceDetail.put("groupName", service.getGroup());
-        serviceDetail.put("name", service.getName());
-        serviceDetail.put("protectThreshold", serviceMetadata.getProtectThreshold());
-        serviceDetail.replace("metadata", JacksonUtils.transferToJsonNode(serviceMetadata.getExtendData()));
-        serviceDetail.replace("selector", JacksonUtils.transferToJsonNode(serviceMetadata.getSelector()));
+        serviceDetail.put(FieldsConstants.NAME_SPACE_ID, service.getNamespace());
+        serviceDetail.put(FieldsConstants.GROUP_NAME, service.getGroup());
+        serviceDetail.put(FieldsConstants.NAME, service.getName());
+        serviceDetail.put(FieldsConstants.PROTECT_THRESHOLD, serviceMetadata.getProtectThreshold());
+        serviceDetail
+                .replace(FieldsConstants.METADATA, JacksonUtils.transferToJsonNode(serviceMetadata.getExtendData()));
+        serviceDetail.replace(FieldsConstants.SELECTOR, JacksonUtils.transferToJsonNode(serviceMetadata.getSelector()));
     }
     
     private ObjectNode newClusterNode(String clusterName, ClusterMetadata clusterMetadata) {
         ObjectNode result = JacksonUtils.createEmptyJsonNode();
-        result.put("name", clusterName);
-        result.replace("healthChecker", JacksonUtils.transferToJsonNode(clusterMetadata.getHealthChecker()));
-        result.replace("metadata", JacksonUtils.transferToJsonNode(clusterMetadata.getExtendData()));
+        result.put(FieldsConstants.NAME, clusterName);
+        result.replace(FieldsConstants.HEALTH_CHECKER,
+                JacksonUtils.transferToJsonNode(clusterMetadata.getHealthChecker()));
+        result.replace(FieldsConstants.METADATA, JacksonUtils.transferToJsonNode(clusterMetadata.getExtendData()));
         return result;
     }
     

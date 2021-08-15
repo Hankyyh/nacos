@@ -26,6 +26,7 @@ import com.alibaba.nacos.common.utils.ConvertUtils;
 import com.alibaba.nacos.common.utils.InternetAddressUtil;
 import com.alibaba.nacos.naming.core.v2.ServiceManager;
 import com.alibaba.nacos.naming.core.v2.client.Client;
+import com.alibaba.nacos.naming.core.v2.client.ClientAttributes;
 import com.alibaba.nacos.naming.core.v2.client.impl.IpPortBasedClient;
 import com.alibaba.nacos.naming.core.v2.client.manager.ClientManager;
 import com.alibaba.nacos.naming.core.v2.client.manager.ClientManagerDelegate;
@@ -46,6 +47,8 @@ import com.alibaba.nacos.naming.misc.SwitchDomain;
 import com.alibaba.nacos.naming.misc.UtilsAndCommons;
 import com.alibaba.nacos.naming.pojo.InstanceOperationInfo;
 import com.alibaba.nacos.naming.pojo.Subscriber;
+import com.alibaba.nacos.naming.pojo.instance.BeatInfoInstanceBuilder;
+import com.alibaba.nacos.naming.push.UdpPushService;
 import com.alibaba.nacos.naming.utils.ServiceUtil;
 
 import java.util.HashMap;
@@ -74,16 +77,19 @@ public class InstanceOperatorClientImpl implements InstanceOperator {
     
     private final SwitchDomain switchDomain;
     
+    private final UdpPushService pushService;
+    
     public InstanceOperatorClientImpl(ClientManagerDelegate clientManager,
             ClientOperationServiceProxy clientOperationService, ServiceStorage serviceStorage,
             NamingMetadataOperateService metadataOperateService, NamingMetadataManager metadataManager,
-            SwitchDomain switchDomain) {
+            SwitchDomain switchDomain, UdpPushService pushService) {
         this.clientManager = clientManager;
         this.clientOperationService = clientOperationService;
         this.serviceStorage = serviceStorage;
         this.metadataOperateService = metadataOperateService;
         this.metadataManager = metadataManager;
         this.switchDomain = switchDomain;
+        this.pushService = pushService;
     }
     
     /**
@@ -93,7 +99,7 @@ public class InstanceOperatorClientImpl implements InstanceOperator {
     public void registerInstance(String namespaceId, String serviceName, Instance instance) {
         boolean ephemeral = instance.isEphemeral();
         String clientId = IpPortBasedClient.getClientId(instance.toInetAddr(), ephemeral);
-        createIpPortClientIfAbsent(clientId, ephemeral);
+        createIpPortClientIfAbsent(clientId);
         Service service = getService(namespaceId, serviceName, ephemeral);
         clientOperationService.registerInstance(service, instance, clientId);
     }
@@ -168,9 +174,10 @@ public class InstanceOperatorClientImpl implements InstanceOperator {
     public ServiceInfo listInstance(String namespaceId, String serviceName, Subscriber subscriber, String cluster,
             boolean healthOnly) {
         Service service = getService(namespaceId, serviceName, true);
-        if (subscriber.getPort() > 0) {
+        // For adapt 1.X subscribe logic
+        if (subscriber.getPort() > 0 && pushService.canEnablePush(subscriber.getAgent())) {
             String clientId = IpPortBasedClient.getClientId(subscriber.getAddrStr(), true);
-            createIpPortClientIfAbsent(clientId, true);
+            createIpPortClientIfAbsent(clientId);
             clientOperationService.subscribeService(service, subscriber, clientId);
         }
         ServiceInfo serviceInfo = serviceStorage.getData(service);
@@ -205,7 +212,7 @@ public class InstanceOperatorClientImpl implements InstanceOperator {
     
     @Override
     public int handleBeat(String namespaceId, String serviceName, String ip, int port, String cluster,
-            RsInfo clientBeat) throws NacosException {
+            RsInfo clientBeat, BeatInfoInstanceBuilder builder) throws NacosException {
         Service service = getService(namespaceId, serviceName, true);
         String clientId = IpPortBasedClient.getClientId(ip + InternetAddressUtil.IP_PORT_SPLITER + port, true);
         IpPortBasedClient client = (IpPortBasedClient) clientManager.getClient(clientId);
@@ -213,15 +220,7 @@ public class InstanceOperatorClientImpl implements InstanceOperator {
             if (null == clientBeat) {
                 return NamingResponseCode.RESOURCE_NOT_FOUND;
             }
-            Instance instance = new Instance();
-            instance.setPort(clientBeat.getPort());
-            instance.setIp(clientBeat.getIp());
-            instance.setWeight(clientBeat.getWeight());
-            instance.setMetadata(clientBeat.getMetadata());
-            instance.setClusterName(clientBeat.getCluster());
-            instance.setServiceName(serviceName);
-            instance.setInstanceId(instance.getInstanceId());
-            instance.setEphemeral(clientBeat.isEphemeral());
+            Instance instance = builder.setBeatInfo(clientBeat).setServiceName(serviceName).build();
             registerInstance(namespaceId, serviceName, instance);
             client = (IpPortBasedClient) clientManager.getClient(clientId);
         }
@@ -321,9 +320,9 @@ public class InstanceOperatorClientImpl implements InstanceOperator {
         return result;
     }
     
-    private void createIpPortClientIfAbsent(String clientId, boolean ephemeral) {
+    private void createIpPortClientIfAbsent(String clientId) {
         if (!clientManager.contains(clientId)) {
-            clientManager.clientConnected(new IpPortBasedClient(clientId, ephemeral));
+            clientManager.clientConnected(clientId, new ClientAttributes());
         }
     }
     
