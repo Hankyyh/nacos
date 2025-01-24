@@ -19,11 +19,12 @@ package com.alibaba.nacos.config.server.controller;
 import com.alibaba.nacos.common.model.RestResult;
 import com.alibaba.nacos.config.server.constant.Constants;
 import com.alibaba.nacos.config.server.model.capacity.Capacity;
+import com.alibaba.nacos.config.server.paramcheck.ConfigDefaultHttpParamExtractor;
 import com.alibaba.nacos.config.server.service.capacity.CapacityService;
 import com.alibaba.nacos.common.utils.StringUtils;
+import com.alibaba.nacos.core.paramcheck.ExtractorManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -39,6 +40,7 @@ import javax.servlet.http.HttpServletResponse;
  */
 @RestController
 @RequestMapping(Constants.CAPACITY_CONTROLLER_PATH)
+@ExtractorManager.Extractor(httpExtractor = ConfigDefaultHttpParamExtractor.class)
 public class CapacityController {
     
     private static final Logger LOGGER = LoggerFactory.getLogger(CapacityController.class);
@@ -51,7 +53,6 @@ public class CapacityController {
     
     private static final int STATUS500 = 500;
     
-    @Autowired
     public CapacityController(CapacityService capacityService) {
         this.capacityService = capacityService;
     }
@@ -60,20 +61,20 @@ public class CapacityController {
     public RestResult<Capacity> getCapacity(HttpServletResponse response, @RequestParam(required = false) String group,
             @RequestParam(required = false) String tenant) {
         if (group == null && tenant == null) {
-            RestResult<Capacity> restResult = new RestResult<Capacity>();
+            RestResult<Capacity> restResult = new RestResult<>();
             response.setStatus(STATUS400);
             restResult.setCode(STATUS400);
             restResult.setMessage("The parameter group and tenant cannot be empty at the same time");
             return restResult;
         }
         if (group == null && StringUtils.isBlank(tenant)) {
-            RestResult<Capacity> restResult = new RestResult<Capacity>();
+            RestResult<Capacity> restResult = new RestResult<>();
             response.setStatus(STATUS400);
             restResult.setCode(STATUS400);
             restResult.setMessage("tenant cannot be an empty string");
             return restResult;
         }
-        RestResult<Capacity> restResult = new RestResult<Capacity>();
+        RestResult<Capacity> restResult = new RestResult<>();
         try {
             response.setStatus(STATUS200);
             restResult.setCode(STATUS200);
@@ -105,13 +106,13 @@ public class CapacityController {
             @RequestParam(required = false) Integer maxAggrCount, @RequestParam(required = false) Integer maxAggrSize) {
         if (StringUtils.isBlank(group) && StringUtils.isBlank(tenant)) {
             capacityService.initAllCapacity();
-            RestResult<Boolean> restResult = new RestResult<Boolean>();
+            RestResult<Boolean> restResult = new RestResult<>();
             setFailResult(response, restResult, STATUS400);
             restResult.setMessage("The parameter group and tenant cannot be empty at the same time");
             return restResult;
         }
         if (quota == null && maxSize == null && maxAggrCount == null && maxAggrSize == null) {
-            RestResult<Boolean> restResult = new RestResult<Boolean>();
+            RestResult<Boolean> restResult = new RestResult<>();
             setFailResult(response, restResult, STATUS400);
             restResult.setMessage(
                     "The parameters quota, maxSize, maxAggrCount, maxAggrSize cannot be empty at the same time");
@@ -126,7 +127,7 @@ public class CapacityController {
             targetFieldName = "tenant";
             targetFieldValue = tenant;
         }
-        RestResult<Boolean> restResult = new RestResult<Boolean>();
+        RestResult<Boolean> restResult = new RestResult<>();
         if (StringUtils.isBlank(targetFieldValue)) {
             setFailResult(response, restResult, STATUS400);
             restResult.setMessage(String.format("parameter %s is empty.", targetFieldName));

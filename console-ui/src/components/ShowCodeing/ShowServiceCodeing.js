@@ -52,6 +52,7 @@ class ShowServiceCodeing extends React.Component {
     this.springCode = 'TODO';
     this.sprigbootCode = 'TODO';
     this.sprigcloudCode = 'TODO';
+    this.csharpCode = 'TODO';
   }
 
   componentDidMount() {}
@@ -85,6 +86,7 @@ class ShowServiceCodeing extends React.Component {
     this.cppCode = this.getCppCode(obj);
     this.shellCode = this.getShellCode(obj);
     this.pythonCode = this.getPythonCode(obj);
+    this.csharpCode = this.getCSharpCode(obj);
     this.forceUpdate();
   }
 
@@ -360,7 +362,222 @@ public class NacosConsumerApplication {
   }
 
   getPythonCode(data) {
-    return 'TODO';
+    return `/*
+* Demo for Nacos
+*/
+import json
+import socket
+
+import nacos
+
+
+def get_host_ip():
+    res = socket.gethostbyname(socket.gethostname())
+    return res
+
+
+def load_config(content):
+    _config = json.loads(content)
+    return _config
+
+
+def nacos_config_callback(args):
+    content = args['raw_content']
+    load_config(content)
+
+
+class NacosClient:
+    service_name = None
+    service_port = None
+    service_group = None
+
+    def __init__(self, server_endpoint, namespace_id, username=None, password=None):
+        self.client = nacos.NacosClient(server_endpoint,
+                                        namespace=namespace_id,
+                                        username=username,
+                                        password=password)
+        self.endpoint = server_endpoint
+        self.service_ip = get_host_ip()
+
+    def register(self):
+        self.client.add_naming_instance(self.service_name,
+                                        self.service_ip,
+                                        self.service_port,
+                                        group_name=self.service_group)
+
+    def modify(self, service_name, service_ip=None, service_port=None):
+        self.client.modify_naming_instance(service_name,
+                                           service_ip if service_ip else self.service_ip,
+                                           service_port if service_port else self.service_port)
+
+    def unregister(self):
+        self.client.remove_naming_instance(self.service_name,
+                                           self.service_ip,
+                                           self.service_port)
+
+    def set_service(self, service_name, service_ip, service_port, service_group):
+        self.service_name = service_name
+        self.service_ip = service_ip
+        self.service_port = service_port
+        self.service_group = service_group
+
+    async def beat_callback(self):
+        self.client.send_heartbeat(self.service_name,
+                                   self.service_ip,
+                                   self.service_port)
+
+    def load_conf(self, data_id, group):
+        return self.client.get_config(data_id=data_id, group=group, no_snapshot=True)
+
+    def add_conf_watcher(self, data_id, group, callback):
+        self.client.add_config_watcher(data_id=data_id, group=group, cb=callback)
+
+
+if __name__ == '__main__':
+    nacos_config = {
+        "nacos_data_id":"test",
+        "nacos_server_ip":"127.0.0.1",
+        "nacos_namespace":"public",
+        "nacos_groupName":"DEFAULT_GROUP",
+        "nacos_user":"nacos",
+        "nacos_password":"1234567"
+    }
+    nacos_data_id = nacos_config["nacos_data_id"]
+    SERVER_ADDRESSES = nacos_config["nacos_server_ip"]
+    NAMESPACE = nacos_config["nacos_namespace"]
+    groupName = nacos_config["nacos_groupName"]
+    user = nacos_config["nacos_user"]
+    password = nacos_config["nacos_password"]
+    # todo 将另一个路由对象（通常定义在其他模块或文件中）合并到主应用（app）中。
+    # app.include_router(custom_api.router, tags=['test'])
+    service_ip = get_host_ip()
+    client = NacosClient(SERVER_ADDRESSES, NAMESPACE, user, password)
+    client.add_conf_watcher(nacos_data_id, groupName, nacos_config_callback)
+
+    # 启动时，强制同步一次配置
+    data_stream = client.load_conf(nacos_data_id, groupName)
+    json_config = load_config(data_stream)
+    #设定服务
+    client.set_service(json_config["service_name"], json_config.get("service_ip", service_ip), service_port, groupName)
+    #注册服务
+    client.register()
+    #下线服务
+    client.unregister()
+`;
+  }
+
+  getCSharpCode(data) {
+    return `/* Refer to document: https://github.com/nacos-group/nacos-sdk-csharp/
+Demo for Basic Nacos Opreation
+App.csproj
+
+<ItemGroup>
+  <PackageReference Include="nacos-sdk-csharp" Version="\${latest.version}" />
+</ItemGroup>
+*/
+
+using Microsoft.Extensions.DependencyInjection;
+using Nacos.V2;
+using Nacos.V2.DependencyInjection;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task Main(string[] args)
+    {
+        IServiceCollection services = new ServiceCollection();
+
+        services.AddNacosV2Naming(x =>
+        {
+            x.ServerAddresses = new List<string> { "http://localhost:8848/" };
+            x.Namespace = "cs-test";
+
+            // swich to use http or rpc
+            x.NamingUseRpc = true;
+        });
+
+        IServiceProvider serviceProvider = services.BuildServiceProvider();
+        var namingSvc = serviceProvider.GetService<INacosNamingService>();
+
+        await namingSvc.RegisterInstance("${this.record.name}", "11.11.11.11", 8888, "TEST1");
+
+        await namingSvc.RegisterInstance("${this.record.name}", "2.2.2.2", 9999, "DEFAULT");
+
+        Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(await namingSvc.GetAllInstances("${this.record.name}")));
+
+        await namingSvc.DeregisterInstance("${this.record.name}", "2.2.2.2", 9999, "DEFAULT");
+
+        var listener = new EventListener();
+
+        await namingSvc.Subscribe("${this.record.name}", listener);
+    }
+
+    internal class EventListener : IEventListener
+    {
+        public Task OnEvent(IEvent @event)
+        {
+            Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(@event));
+            return Task.CompletedTask;
+        }
+    }
+}
+
+/* Refer to document: https://github.com/nacos-group/nacos-sdk-csharp/
+Demo for ASP.NET Core Integration
+App.csproj
+
+<ItemGroup>
+  <PackageReference Include="nacos-sdk-csharp.AspNetCore" Version="\${latest.version}" />
+</ItemGroup>
+*/
+
+/* Refer to document: https://github.com/nacos-group/nacos-sdk-csharp/blob/dev/samples/App1/appsettings.json
+*  appsettings.json
+{
+  "nacos": {
+    "ServerAddresses": [ "http://localhost:8848" ],
+    "DefaultTimeOut": 15000,
+    "Namespace": "cs",
+    "ServiceName": "App1",
+    "GroupName": "DEFAULT_GROUP",
+    "ClusterName": "DEFAULT",
+    "Port": 0,
+    "Weight": 100,
+    "RegisterEnabled": true,
+    "InstanceEnabled": true,
+    "Ephemeral": true,
+    "NamingUseRpc": true,
+    "NamingLoadCacheAtStart": ""
+  }
+}
+*/
+
+// Refer to document: https://github.com/nacos-group/nacos-sdk-csharp/blob/dev/samples/App1/Startup.cs
+using Nacos.AspNetCore.V2;
+
+public class Startup
+{
+    public Startup(IConfiguration configuration)
+    {
+        Configuration = configuration;
+    }
+
+    public IConfiguration Configuration { get; }
+
+    public void ConfigureServices(IServiceCollection services)
+    {
+        // ....
+        services.AddNacosAspNet(Configuration);
+    }
+
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        // ....
+    }
+}
+    `;
   }
 
   openDialog(record) {
@@ -478,6 +695,12 @@ public class NacosConsumerApplication {
                   title={'Python'}
                   key={6}
                   onClick={this.changeTab.bind(this, 'commoneditor6', this.pythonCode)}
+                />
+
+                <TabPane
+                  title={'C#'}
+                  key={7}
+                  onClick={this.changeTab.bind(this, 'commoneditor7', this.csharpCode)}
                 />
                 {}
               </Tab>

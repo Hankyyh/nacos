@@ -21,18 +21,22 @@ import com.alibaba.nacos.api.config.remote.response.ConfigRemoveResponse;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.remote.request.RequestMeta;
 import com.alibaba.nacos.auth.annotation.Secured;
-import com.alibaba.nacos.auth.common.ActionTypes;
-import com.alibaba.nacos.config.server.auth.ConfigResourceParser;
+import com.alibaba.nacos.common.utils.StringUtils;
 import com.alibaba.nacos.config.server.model.event.ConfigDataChangeEvent;
+import com.alibaba.nacos.config.server.model.gray.TagGrayRule;
 import com.alibaba.nacos.config.server.service.ConfigChangePublisher;
-import com.alibaba.nacos.config.server.service.repository.PersistService;
+import com.alibaba.nacos.config.server.service.repository.ConfigInfoGrayPersistService;
+import com.alibaba.nacos.config.server.service.repository.ConfigInfoPersistService;
 import com.alibaba.nacos.config.server.service.trace.ConfigTraceService;
 import com.alibaba.nacos.config.server.utils.ParamUtils;
 import com.alibaba.nacos.config.server.utils.TimeUtils;
+import com.alibaba.nacos.core.control.TpsControl;
+import com.alibaba.nacos.core.paramcheck.ExtractorManager;
+import com.alibaba.nacos.core.paramcheck.impl.ConfigRequestParamExtractor;
 import com.alibaba.nacos.core.remote.RequestHandler;
-import com.alibaba.nacos.core.remote.control.TpsControl;
 import com.alibaba.nacos.core.utils.Loggers;
-import com.alibaba.nacos.common.utils.StringUtils;
+import com.alibaba.nacos.plugin.auth.constant.ActionTypes;
+import com.alibaba.nacos.plugin.auth.constant.SignType;
 import org.springframework.stereotype.Component;
 
 import java.sql.Timestamp;
@@ -46,15 +50,20 @@ import java.sql.Timestamp;
 @Component
 public class ConfigRemoveRequestHandler extends RequestHandler<ConfigRemoveRequest, ConfigRemoveResponse> {
     
-    private final PersistService persistService;
+    private final ConfigInfoPersistService configInfoPersistService;
     
-    public ConfigRemoveRequestHandler(PersistService persistService) {
-        this.persistService = persistService;
+    private final ConfigInfoGrayPersistService configInfoGrayPersistService;
+    
+    public ConfigRemoveRequestHandler(ConfigInfoPersistService configInfoPersistService,
+            ConfigInfoGrayPersistService configInfoGrayPersistService) {
+        this.configInfoPersistService = configInfoPersistService;
+        this.configInfoGrayPersistService = configInfoGrayPersistService;
     }
     
     @Override
     @TpsControl(pointName = "ConfigRemove")
-    @Secured(action = ActionTypes.WRITE, parser = ConfigResourceParser.class)
+    @Secured(action = ActionTypes.WRITE, signType = SignType.CONFIG)
+    @ExtractorManager.Extractor(rpcExtractor = ConfigRequestParamExtractor.class)
     public ConfigRemoveResponse handle(ConfigRemoveRequest configRemoveRequest, RequestMeta meta)
             throws NacosException {
         // check tenant
@@ -62,23 +71,29 @@ public class ConfigRemoveRequestHandler extends RequestHandler<ConfigRemoveReque
         String dataId = configRemoveRequest.getDataId();
         String group = configRemoveRequest.getGroup();
         String tag = configRemoveRequest.getTag();
-        
+        String underLine = "_";
         try {
             ParamUtils.checkTenant(tenant);
             ParamUtils.checkParam(dataId, group, "datumId", "rm");
             ParamUtils.checkParam(tag);
+            String persistEvent = ConfigTraceService.PERSISTENCE_EVENT;
             
             String clientIp = meta.getClientIp();
+            String grayName = null;
             if (StringUtils.isBlank(tag)) {
-                persistService.removeConfigInfo(dataId, group, tenant, clientIp, null);
+                
+                configInfoPersistService.removeConfigInfo(dataId, group, tenant, clientIp, null);
             } else {
-                persistService.removeConfigInfoTag(dataId, group, tenant, tag, clientIp, null);
+                persistEvent = ConfigTraceService.PERSISTENCE_EVENT_TAG + underLine + tag;
+                
+                grayName = TagGrayRule.TYPE_TAG + underLine + tag;
+                configInfoGrayPersistService.removeConfigInfoGray(dataId, group, tenant, grayName, clientIp, null);
             }
             final Timestamp time = TimeUtils.getCurrentTime();
-            ConfigTraceService.logPersistenceEvent(dataId, group, tenant, null, time.getTime(), clientIp,
-                    ConfigTraceService.PERSISTENCE_EVENT_REMOVE, null);
-            ConfigChangePublisher
-                    .notifyConfigChange(new ConfigDataChangeEvent(false, dataId, group, tenant, tag, time.getTime()));
+            ConfigTraceService.logPersistenceEvent(dataId, group, tenant, null, time.getTime(), clientIp, persistEvent,
+                    ConfigTraceService.PERSISTENCE_TYPE_REMOVE, null);
+            ConfigChangePublisher.notifyConfigChange(
+                    new ConfigDataChangeEvent(dataId, group, tenant, grayName, time.getTime()));
             return ConfigRemoveResponse.buildSuccessResponse();
             
         } catch (Exception e) {

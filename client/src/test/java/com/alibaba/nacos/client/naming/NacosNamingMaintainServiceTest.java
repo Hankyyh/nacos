@@ -26,52 +26,76 @@ import com.alibaba.nacos.api.naming.pojo.Service;
 import com.alibaba.nacos.api.selector.AbstractSelector;
 import com.alibaba.nacos.api.selector.ExpressionSelector;
 import com.alibaba.nacos.api.selector.NoneSelector;
+import com.alibaba.nacos.client.naming.core.NamingServerListManager;
 import com.alibaba.nacos.client.naming.remote.http.NamingHttpClientProxy;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import com.alibaba.nacos.client.security.SecurityProxy;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatcher;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ScheduledExecutorService;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-public class NacosNamingMaintainServiceTest {
+class NacosNamingMaintainServiceTest {
     
     private NacosNamingMaintainService nacosNamingMaintainService;
     
     private NamingHttpClientProxy serverProxy;
     
-    @Before
-    public void setUp() throws Exception {
+    private NamingServerListManager serverListManager;
+    
+    private SecurityProxy securityProxy;
+    
+    private ScheduledExecutorService executorService;
+    
+    @BeforeEach
+    void setUp() throws Exception {
         Properties prop = new Properties();
         prop.setProperty(PropertyKeyConst.NAMESPACE, "public");
+        prop.setProperty("serverAddr", "localhost");
+        
         nacosNamingMaintainService = new NacosNamingMaintainService(prop);
         serverProxy = mock(NamingHttpClientProxy.class);
+        serverListManager = mock(NamingServerListManager.class);
+        securityProxy = mock(SecurityProxy.class);
+        executorService = mock(ScheduledExecutorService.class);
+        
         Field serverProxyField = NacosNamingMaintainService.class.getDeclaredField("serverProxy");
         serverProxyField.setAccessible(true);
         serverProxyField.set(nacosNamingMaintainService, serverProxy);
+        Field serverListManagerField = NacosNamingMaintainService.class.getDeclaredField("serverListManager");
+        serverListManagerField.setAccessible(true);
+        serverListManagerField.set(nacosNamingMaintainService, serverListManager);
+        Field securityProxyFiled = NacosNamingMaintainService.class.getDeclaredField("securityProxy");
+        securityProxyFiled.setAccessible(true);
+        securityProxyFiled.set(nacosNamingMaintainService, securityProxy);
+        Field executorServiceField = NacosNamingMaintainService.class.getDeclaredField("executorService");
+        executorServiceField.setAccessible(true);
+        executorServiceField.set(nacosNamingMaintainService, executorService);
     }
     
-    @After
-    public void tearDown() throws Exception {
+    @AfterEach
+    void tearDown() throws Exception {
     }
     
     @Test
-    public void testConstructor() throws NacosException {
+    void testConstructor() throws NacosException {
         NacosNamingMaintainService client = new NacosNamingMaintainService("localhost");
-        Assert.assertNotNull(client);
+        assertNotNull(client);
     }
     
     @Test
-    public void testUpdateInstance1() throws NacosException {
+    void testUpdateInstance1() throws NacosException {
         //given
         String serviceName = "service1";
         String groupName = "group1";
@@ -83,7 +107,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testUpdateInstance2() throws NacosException {
+    void testUpdateInstance2() throws NacosException {
         //given
         String serviceName = "service1";
         Instance instance = new Instance();
@@ -94,7 +118,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testQueryService1() throws NacosException {
+    void testQueryService1() throws NacosException {
         //given
         String serviceName = "service1";
         String groupName = "group1";
@@ -105,7 +129,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testQueryService2() throws NacosException {
+    void testQueryService2() throws NacosException {
         //given
         String serviceName = "service1";
         Instance instance = new Instance();
@@ -116,7 +140,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testCreateService1() throws NacosException {
+    void testCreateService1() throws NacosException {
         //given
         String serviceName = "service1";
         //when
@@ -133,7 +157,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testCreateService2() throws NacosException {
+    void testCreateService2() throws NacosException {
         //given
         String serviceName = "service1";
         String groupName = "groupName";
@@ -151,7 +175,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testCreateService3() throws NacosException {
+    void testCreateService3() throws NacosException {
         //given
         String serviceName = "service1";
         String groupName = "groupName";
@@ -170,7 +194,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testCreateService5() throws NacosException {
+    void testCreateService5() throws NacosException {
         //given
         String serviceName = "service1";
         String groupName = "groupName";
@@ -190,7 +214,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testCreateService4() throws NacosException {
+    void testCreateService4() throws NacosException {
         //given
         Service service = new Service();
         AbstractSelector selector = new NoneSelector();
@@ -201,7 +225,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testDeleteService1() throws NacosException {
+    void testDeleteService1() throws NacosException {
         //given
         String serviceName = "service1";
         //when
@@ -211,7 +235,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testDeleteService2() throws NacosException {
+    void testDeleteService2() throws NacosException {
         //given
         String serviceName = "service1";
         String groupName = "groupName";
@@ -222,7 +246,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testUpdateService1() throws NacosException {
+    void testUpdateService1() throws NacosException {
         //given
         String serviceName = "service1";
         String groupName = "groupName";
@@ -241,7 +265,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testUpdateService2() throws NacosException {
+    void testUpdateService2() throws NacosException {
         //given
         String serviceName = "service1";
         String groupName = "groupName";
@@ -263,7 +287,7 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testUpdateService3() throws NacosException {
+    void testUpdateService3() throws NacosException {
         //given
         Service service = new Service();
         AbstractSelector selector = new NoneSelector();
@@ -274,9 +298,12 @@ public class NacosNamingMaintainServiceTest {
     }
     
     @Test
-    public void testShutDown() throws NacosException {
+    void testShutDown() throws NacosException {
+        //when
         nacosNamingMaintainService.shutDown();
         //then
         verify(serverProxy, times(1)).shutdown();
+        verify(serverListManager, times(1)).shutdown();
+        verify(executorService, times(1)).shutdown();
     }
 }

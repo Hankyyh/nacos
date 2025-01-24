@@ -21,7 +21,6 @@ import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.grpc.auto.Payload;
 import com.alibaba.nacos.api.grpc.auto.RequestGrpc;
 import com.alibaba.nacos.api.naming.remote.request.InstanceRequest;
-import com.alibaba.nacos.api.remote.PayloadRegistry;
 import com.alibaba.nacos.api.remote.request.HealthCheckRequest;
 import com.alibaba.nacos.api.remote.request.RequestMeta;
 import com.alibaba.nacos.api.remote.request.ServerCheckRequest;
@@ -29,6 +28,7 @@ import com.alibaba.nacos.api.remote.response.ErrorResponse;
 import com.alibaba.nacos.api.remote.response.HealthCheckResponse;
 import com.alibaba.nacos.api.remote.response.Response;
 import com.alibaba.nacos.api.remote.response.ServerCheckResponse;
+import com.alibaba.nacos.common.remote.PayloadRegistry;
 import com.alibaba.nacos.common.remote.client.grpc.GrpcUtils;
 import com.alibaba.nacos.core.remote.Connection;
 import com.alibaba.nacos.core.remote.ConnectionManager;
@@ -36,8 +36,11 @@ import com.alibaba.nacos.core.remote.ConnectionMeta;
 import com.alibaba.nacos.core.remote.RequestHandler;
 import com.alibaba.nacos.core.remote.RequestHandlerRegistry;
 import com.alibaba.nacos.sys.utils.ApplicationUtils;
+import com.asarkar.grpc.test.GrpcCleanupExtension;
+import com.asarkar.grpc.test.Resources;
 import io.grpc.Context;
 import io.grpc.Contexts;
+import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
@@ -45,25 +48,22 @@ import io.grpc.ServerInterceptor;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.stub.StreamObserver;
-import io.grpc.testing.GrpcCleanupRule;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.UUID;
 
-import static com.alibaba.nacos.core.remote.grpc.BaseGrpcServer.CONTEXT_KEY_CONN_ID;
-import static com.alibaba.nacos.core.remote.grpc.BaseGrpcServer.CONTEXT_KEY_CONN_LOCAL_PORT;
-import static com.alibaba.nacos.core.remote.grpc.BaseGrpcServer.CONTEXT_KEY_CONN_REMOTE_IP;
-import static com.alibaba.nacos.core.remote.grpc.BaseGrpcServer.CONTEXT_KEY_CONN_REMOTE_PORT;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * {@link GrpcRequestAcceptor} unit test.
@@ -71,11 +71,8 @@ import static com.alibaba.nacos.core.remote.grpc.BaseGrpcServer.CONTEXT_KEY_CONN
  * @author chenglu
  * @date 2021-07-01 10:49
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith({MockitoExtension.class, GrpcCleanupExtension.class})
 public class GrpcRequestAcceptorTest {
-    
-    @Rule
-    public GrpcCleanupRule grpcCleanupRule = new GrpcCleanupRule();
     
     @Mock
     private ConnectionManager connectionManager;
@@ -94,32 +91,31 @@ public class GrpcRequestAcceptorTest {
     
     private MockRequestHandler mockHandler;
     
-    @Before
-    public void setUp() throws IOException {
+    @BeforeEach
+    void setUp(Resources resources) throws IOException {
         String serverName = InProcessServerBuilder.generateName();
         String remoteIp = "127.0.0.1";
-        grpcCleanupRule.register(InProcessServerBuilder
-                .forName(serverName).directExecutor().addService(acceptor)
-                .intercept(new ServerInterceptor() {
+        resources.register(
+                InProcessServerBuilder.forName(serverName).directExecutor().addService(acceptor).intercept(new ServerInterceptor() {
                     @Override
                     public <R, S> ServerCall.Listener<R> interceptCall(ServerCall<R, S> serverCall, Metadata metadata,
                             ServerCallHandler<R, S> serverCallHandler) {
-                        Context ctx = Context.current().withValue(CONTEXT_KEY_CONN_ID, UUID.randomUUID().toString())
-                                .withValue(CONTEXT_KEY_CONN_LOCAL_PORT, 1234)
-                                .withValue(CONTEXT_KEY_CONN_REMOTE_PORT, 8948)
-                                .withValue(CONTEXT_KEY_CONN_REMOTE_IP, remoteIp);
+                        Context ctx = Context.current().withValue(GrpcServerConstants.CONTEXT_KEY_CONN_ID, UUID.randomUUID().toString())
+                                .withValue(GrpcServerConstants.CONTEXT_KEY_CONN_LOCAL_PORT, 1234)
+                                .withValue(GrpcServerConstants.CONTEXT_KEY_CONN_REMOTE_PORT, 8948)
+                                .withValue(GrpcServerConstants.CONTEXT_KEY_CONN_REMOTE_IP, remoteIp);
                         return Contexts.interceptCall(ctx, serverCall, metadata, serverCallHandler);
                     }
-                })
-                .build().start());
-        streamStub = RequestGrpc.newStub(
-                grpcCleanupRule.register(InProcessChannelBuilder.forName(serverName).directExecutor().build()));
+                }).build().start(), Duration.ofSeconds(20L));
+        ManagedChannel channel = InProcessChannelBuilder.forName(serverName).directExecutor().build();
+        resources.register(channel, Duration.ofSeconds(20L));
+        streamStub = RequestGrpc.newStub(channel);
         mockHandler = new MockRequestHandler();
         PayloadRegistry.init();
     }
     
     @Test
-    public void testApplicationUnStarted() {
+    void testApplicationUnStarted() {
         RequestMeta metadata = new RequestMeta();
         metadata.setClientIp("127.0.0.1");
         metadata.setConnectionId(connectId);
@@ -132,16 +128,16 @@ public class GrpcRequestAcceptorTest {
             public void onNext(Payload payload) {
                 System.out.println("Receive data from server: " + payload);
                 Object res = GrpcUtils.parse(payload);
-                Assert.assertTrue(res instanceof ErrorResponse);
+                assertTrue(res instanceof ErrorResponse);
                 ErrorResponse errorResponse = (ErrorResponse) res;
-                Assert.assertEquals(errorResponse.getErrorCode(), NacosException.INVALID_SERVER_STATUS);
+                assertEquals(NacosException.INVALID_SERVER_STATUS, errorResponse.getErrorCode());
             }
-    
+            
             @Override
             public void onError(Throwable throwable) {
-                Assert.fail(throwable.getMessage());
+                fail(throwable.getMessage());
             }
-    
+            
             @Override
             public void onCompleted() {
                 System.out.println("complete");
@@ -152,7 +148,7 @@ public class GrpcRequestAcceptorTest {
     }
     
     @Test
-    public void testServerCheckRequest() {
+    void testServerCheckRequest() {
         ApplicationUtils.setStarted(true);
         RequestMeta metadata = new RequestMeta();
         metadata.setClientIp("127.0.0.1");
@@ -166,14 +162,14 @@ public class GrpcRequestAcceptorTest {
             public void onNext(Payload payload) {
                 System.out.println("Receive data from server: " + payload);
                 Object res = GrpcUtils.parse(payload);
-                Assert.assertTrue(res instanceof ServerCheckResponse);
+                assertTrue(res instanceof ServerCheckResponse);
             }
-        
+            
             @Override
             public void onError(Throwable throwable) {
-                Assert.fail(throwable.getMessage());
+                fail(throwable.getMessage());
             }
-        
+            
             @Override
             public void onCompleted() {
                 System.out.println("complete");
@@ -185,7 +181,7 @@ public class GrpcRequestAcceptorTest {
     }
     
     @Test
-    public void testNoRequestHandler() {
+    void testNoRequestHandler() {
         ApplicationUtils.setStarted(true);
         RequestMeta metadata = new RequestMeta();
         metadata.setClientIp("127.0.0.1");
@@ -199,17 +195,17 @@ public class GrpcRequestAcceptorTest {
             public void onNext(Payload payload) {
                 System.out.println("Receive data from server: " + payload);
                 Object res = GrpcUtils.parse(payload);
-                Assert.assertTrue(res instanceof ErrorResponse);
+                assertTrue(res instanceof ErrorResponse);
                 
                 ErrorResponse errorResponse = (ErrorResponse) res;
-                Assert.assertEquals(errorResponse.getErrorCode(), NacosException.NO_HANDLER);
+                assertEquals(NacosException.NO_HANDLER, errorResponse.getErrorCode());
             }
-        
+            
             @Override
             public void onError(Throwable throwable) {
-                Assert.fail(throwable.getMessage());
+                fail(throwable.getMessage());
             }
-        
+            
             @Override
             public void onCompleted() {
                 System.out.println("complete");
@@ -221,7 +217,7 @@ public class GrpcRequestAcceptorTest {
     }
     
     @Test
-    public void testConnectionNotRegister() {
+    void testConnectionNotRegister() {
         ApplicationUtils.setStarted(true);
         Mockito.when(requestHandlerRegistry.getByRequestType(Mockito.anyString())).thenReturn(mockHandler);
         Mockito.when(connectionManager.checkValid(Mockito.any())).thenReturn(false);
@@ -238,17 +234,17 @@ public class GrpcRequestAcceptorTest {
             public void onNext(Payload payload) {
                 System.out.println("Receive data from server: " + payload);
                 Object res = GrpcUtils.parse(payload);
-                Assert.assertTrue(res instanceof ErrorResponse);
-            
+                assertTrue(res instanceof ErrorResponse);
+                
                 ErrorResponse errorResponse = (ErrorResponse) res;
-                Assert.assertEquals(errorResponse.getErrorCode(), NacosException.UN_REGISTER);
+                assertEquals(NacosException.UN_REGISTER, errorResponse.getErrorCode());
             }
-        
+            
             @Override
             public void onError(Throwable throwable) {
-                Assert.fail(throwable.getMessage());
+                fail(throwable.getMessage());
             }
-        
+            
             @Override
             public void onCompleted() {
                 System.out.println("complete");
@@ -260,7 +256,7 @@ public class GrpcRequestAcceptorTest {
     }
     
     @Test
-    public void testRequestContentError() {
+    void testRequestContentError() {
         ApplicationUtils.setStarted(true);
         Mockito.when(requestHandlerRegistry.getByRequestType(Mockito.anyString())).thenReturn(mockHandler);
         Mockito.when(connectionManager.checkValid(Mockito.any())).thenReturn(true);
@@ -270,29 +266,29 @@ public class GrpcRequestAcceptorTest {
             public void onNext(Payload payload) {
                 System.out.println("Receive data from server: " + payload);
                 Object res = GrpcUtils.parse(payload);
-                Assert.assertTrue(res instanceof ErrorResponse);
-            
+                assertTrue(res instanceof ErrorResponse);
+                
                 ErrorResponse errorResponse = (ErrorResponse) res;
-                Assert.assertEquals(errorResponse.getErrorCode(), NacosException.BAD_GATEWAY);
+                assertEquals(NacosException.BAD_GATEWAY, errorResponse.getErrorCode());
             }
-        
+            
             @Override
             public void onError(Throwable throwable) {
-                Assert.fail(throwable.getMessage());
+                fail(throwable.getMessage());
             }
-        
+            
             @Override
             public void onCompleted() {
                 System.out.println("complete");
             }
         };
-
+        
         streamStub.request(null, streamObserver);
         ApplicationUtils.setStarted(false);
     }
     
     @Test
-    public void testHandleRequestSuccess() {
+    void testHandleRequestSuccess() {
         ApplicationUtils.setStarted(true);
         Mockito.when(requestHandlerRegistry.getByRequestType(Mockito.anyString())).thenReturn(mockHandler);
         Mockito.when(connectionManager.checkValid(Mockito.any())).thenReturn(true);
@@ -300,7 +296,7 @@ public class GrpcRequestAcceptorTest {
         ConnectionMeta connectionMeta = new ConnectionMeta(connectId, ip, ip, 8888, 9848, "GRPC", "", "", new HashMap<>());
         Connection connection = new GrpcConnection(connectionMeta, null, null);
         Mockito.when(connectionManager.getConnection(Mockito.any())).thenReturn(connection);
-    
+        
         RequestMeta metadata = new RequestMeta();
         metadata.setClientIp("127.0.0.1");
         metadata.setConnectionId(connectId);
@@ -312,12 +308,12 @@ public class GrpcRequestAcceptorTest {
             public void onNext(Payload payload) {
                 System.out.println("Receive data from server: " + payload);
                 Object res = GrpcUtils.parse(payload);
-                Assert.assertTrue(res instanceof HealthCheckResponse);
+                assertTrue(res instanceof HealthCheckResponse);
             }
             
             @Override
             public void onError(Throwable throwable) {
-                Assert.fail(throwable.getMessage());
+                fail(throwable.getMessage());
             }
             
             @Override
@@ -331,7 +327,7 @@ public class GrpcRequestAcceptorTest {
     }
     
     @Test
-    public void testHandleRequestError() {
+    void testHandleRequestError() {
         ApplicationUtils.setStarted(true);
         Mockito.when(requestHandlerRegistry.getByRequestType(Mockito.anyString())).thenReturn(mockHandler);
         Mockito.when(connectionManager.checkValid(Mockito.any())).thenReturn(true);
@@ -347,15 +343,15 @@ public class GrpcRequestAcceptorTest {
             public void onNext(Payload payload) {
                 System.out.println("Receive data from server: " + payload);
                 Object res = GrpcUtils.parse(payload);
-                Assert.assertTrue(res instanceof ErrorResponse);
+                assertTrue(res instanceof ErrorResponse);
                 
                 ErrorResponse errorResponse = (ErrorResponse) res;
-                Assert.assertEquals(errorResponse.getErrorCode(), NacosException.SERVER_ERROR);
+                assertEquals(NacosException.SERVER_ERROR, errorResponse.getErrorCode());
             }
             
             @Override
             public void onError(Throwable throwable) {
-                Assert.fail(throwable.getMessage());
+                fail(throwable.getMessage());
             }
             
             @Override
@@ -372,7 +368,7 @@ public class GrpcRequestAcceptorTest {
      * add this Handler just for test.
      */
     class MockRequestHandler extends RequestHandler<HealthCheckRequest, HealthCheckResponse> {
-    
+        
         @Override
         public Response handleRequest(HealthCheckRequest request, RequestMeta meta) throws NacosException {
             return handle(request, meta);

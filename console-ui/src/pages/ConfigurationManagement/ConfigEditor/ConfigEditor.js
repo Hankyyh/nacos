@@ -122,7 +122,7 @@ class ConfigEditor extends React.Component {
           roundedSelection: false,
           readOnly: false,
           lineNumbersMinChars: true,
-          theme: 'vs-dark',
+          theme: 'vs-dark-enhanced',
           wordWrapColumn: 120,
           folding: false,
           showFoldingControls: 'always',
@@ -140,7 +140,7 @@ class ConfigEditor extends React.Component {
         roundedSelection: false,
         readOnly: false,
         lineNumbersMinChars: true,
-        theme: 'vs-dark',
+        theme: 'vs-dark-enhanced',
         wordWrapColumn: 120,
         folding: false,
         showFoldingControls: 'always',
@@ -580,11 +580,12 @@ class ConfigEditor extends React.Component {
       { value: 'yaml', label: 'YAML' },
       { value: 'html', label: 'HTML' },
       { value: 'properties', label: 'Properties' },
+      { value: 'toml', label: 'TOML' },
     ];
     const activeKey = this.state.activeKey.split('-')[0];
 
     return (
-      <div style={{ padding: 10 }}>
+      <div>
         <Loading
           shape="flower"
           style={{ position: 'relative', width: '100%' }}
@@ -613,7 +614,10 @@ class ConfigEditor extends React.Component {
           )}
 
           <Form field={this.field}>
-            <FormItem label="Data ID:" {...formItemLayout}>
+            <FormItem label={locale.namespace} required>
+              <p>{this.tenant}</p>
+            </FormItem>
+            <FormItem label="Data ID" {...formItemLayout}>
               <Input
                 disabled
                 {...init('dataId', {
@@ -624,7 +628,7 @@ class ConfigEditor extends React.Component {
                 })}
               />
             </FormItem>
-            <FormItem label="Group:" {...formItemLayout}>
+            <FormItem label="Group" {...formItemLayout}>
               <Input
                 disabled
                 {...init('group', {

@@ -18,17 +18,24 @@ import React from 'react';
 import { withRouter } from 'react-router-dom';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
-import { ConfigProvider, Icon, Menu } from '@alifd/next';
+import { ConfigProvider, Icon, Menu, Message, Dialog, Button } from '@alifd/next';
 import Header from './Header';
-import { getState } from '../reducers/base';
+import { getState, getNotice, getGuide } from '../reducers/base';
 import getMenuData from './menu';
+import './index.scss';
 
 const { SubMenu, Item } = Menu;
 
 @withRouter
-@connect(state => ({ ...state.locale, ...state.base }), { getState })
+@connect(state => ({ ...state.locale, ...state.base }), { getState, getNotice, getGuide })
 @ConfigProvider.config
 class MainLayout extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      visible: true,
+    };
+  }
   static displayName = 'MainLayout';
 
   static propTypes = {
@@ -36,13 +43,22 @@ class MainLayout extends React.Component {
     location: PropTypes.object,
     history: PropTypes.object,
     version: PropTypes.any,
+    startupMode: PropTypes.any,
     getState: PropTypes.func,
     functionMode: PropTypes.string,
-    children: PropTypes.object,
+    authEnabled: PropTypes.string,
+    children: PropTypes.array,
+    getNotice: PropTypes.func,
+    notice: PropTypes.string,
+    consoleUiEnable: PropTypes.string,
+    getGuide: PropTypes.func,
+    guideMsg: PropTypes.string,
   };
 
   componentDidMount() {
     this.props.getState();
+    this.props.getNotice();
+    this.props.getGuide();
   }
 
   goBack() {
@@ -51,12 +67,15 @@ class MainLayout extends React.Component {
 
   navTo(url) {
     const { search } = this.props.location;
-    this.props.history.push([url, search].join(''));
+    let urlSearchParams = new URLSearchParams(search);
+    urlSearchParams.set('namespace', window.nownamespace);
+    urlSearchParams.set('namespaceShowName', window.namespaceShowName);
+    this.props.history.push([url, '?', urlSearchParams.toString()].join(''));
   }
 
   isCurrentPath(url) {
     const { location } = this.props;
-    return url === location.pathname ? 'current-path' : undefined;
+    return url === location.pathname ? 'current-path next-selected' : undefined;
   }
 
   defaultOpenKeys() {
@@ -80,63 +99,111 @@ class MainLayout extends React.Component {
   }
 
   render() {
-    const { locale = {}, version, functionMode } = this.props;
+    const {
+      locale = {},
+      version,
+      functionMode,
+      authEnabled,
+      consoleUiEnable,
+      startupMode,
+    } = this.props;
+    const { visible } = this.state;
     const MenuData = getMenuData(functionMode);
     return (
-      <>
+      <section
+        className="next-shell next-shell-desktop next-shell-brand"
+        style={{ minHeight: '100vh' }}
+      >
         <Header />
-        <div className="main-container">
-          <div className="left-panel">
-            {this.isShowGoBack() ? (
-              <div className="go-back" onClick={() => this.goBack()}>
-                <Icon type="arrow-left" />
-              </div>
-            ) : (
-              <>
-                <h1 className="nav-title">
-                  {locale.nacosName}
-                  <span>{version}</span>
-                </h1>
-                <Menu
-                  defaultOpenKeys={this.defaultOpenKeys()}
-                  className="nav-menu"
-                  openMode="single"
-                >
-                  {MenuData.map((subMenu, idx) => {
-                    if (subMenu.children) {
-                      return (
-                        <SubMenu key={String(idx)} label={locale[subMenu.key]}>
-                          {subMenu.children.map((item, i) => (
+        <section className="next-shell-sub-main">
+          <div className="main-container next-shell-main">
+            <div className="left-panel next-aside-navigation">
+              <div
+                className="next-shell-navigation next-shell-mini next-shell-aside"
+                style={{ padding: 0 }}
+              >
+                {this.isShowGoBack() ? (
+                  <div className="go-back" onClick={() => this.goBack()}>
+                    <Icon type="arrow-left" />
+                  </div>
+                ) : (
+                  <>
+                    <h1 className="nav-title">
+                      {locale.nacosName}
+                      <span>{version}</span>
+                    </h1>
+                    <h1 className="nav-mode">
+                      {locale.nacosMode}
+                      <span>{startupMode}</span>
+                    </h1>
+                    <Menu
+                      defaultOpenKeys={this.defaultOpenKeys()}
+                      className="next-nav next-normal next-active next-right next-no-arrow next-nav-embeddable"
+                      openMode="single"
+                    >
+                      {consoleUiEnable &&
+                        consoleUiEnable === 'true' &&
+                        MenuData.map((subMenu, idx) => {
+                          if (subMenu.children) {
+                            return (
+                              <SubMenu key={String(idx)} label={locale[subMenu.key]}>
+                                {subMenu.children.map((item, i) => (
+                                  <Item
+                                    key={[idx, i].join('-')}
+                                    onClick={() => this.navTo(item.url)}
+                                    className={this.isCurrentPath(item.url)}
+                                  >
+                                    {locale[item.key]}
+                                  </Item>
+                                ))}
+                              </SubMenu>
+                            );
+                          }
+                          return (
                             <Item
-                              key={[idx, i].join('-')}
-                              onClick={() => this.navTo(item.url)}
-                              className={this.isCurrentPath(item.url)}
+                              key={String(idx)}
+                              className={['first-menu', this.isCurrentPath(subMenu.url)]
+                                .filter(c => c)
+                                .join(' ')}
+                              onClick={() => this.navTo(subMenu.url)}
                             >
-                              {locale[item.key]}
+                              {locale[subMenu.key]}
                             </Item>
-                          ))}
-                        </SubMenu>
-                      );
-                    }
-                    return (
-                      <Item
-                        key={idx}
-                        className={['first-menu', this.isCurrentPath(subMenu.url)]
-                          .filter(c => c)
-                          .join(' ')}
-                        onClick={() => this.navTo(subMenu.url)}
-                      >
-                        {locale[subMenu.key]}
-                      </Item>
-                    );
-                  })}
-                </Menu>
-              </>
-            )}
+                          );
+                        })}
+                    </Menu>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="right-panel next-shell-sub-main">
+              {authEnabled === 'false' && consoleUiEnable === 'true' ? (
+                <Message type="notice">
+                  <div dangerouslySetInnerHTML={{ __html: this.props.notice }} />
+                </Message>
+              ) : null}
+              {consoleUiEnable === 'false' && (
+                <Dialog
+                  visible={visible}
+                  title={locale.consoleClosed}
+                  style={{ width: 600 }}
+                  hasMask={false}
+                  footer={false}
+                  className="enable-dialog"
+                >
+                  <Message type="notice">
+                    <div
+                      style={{ lineHeight: '24px' }}
+                      dangerouslySetInnerHTML={{ __html: this.props.guideMsg }}
+                    />
+                  </Message>
+                </Dialog>
+              )}
+              {this.props.children}
+            </div>
           </div>
-          <div className="right-panel">{this.props.children}</div>
-        </div>
-      </>
+        </section>
+      </section>
     );
   }
 }
