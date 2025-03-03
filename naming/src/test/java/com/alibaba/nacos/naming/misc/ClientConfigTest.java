@@ -20,15 +20,17 @@ import com.alibaba.nacos.common.event.ServerConfigChangeEvent;
 import com.alibaba.nacos.common.notify.NotifyCenter;
 import com.alibaba.nacos.naming.constants.ClientConstants;
 import com.alibaba.nacos.sys.env.EnvUtil;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class ClientConfigTest {
+class ClientConfigTest {
     
     private static final long EXPIRED_TIME = 10000L;
     
@@ -36,18 +38,27 @@ public class ClientConfigTest {
     
     private MockEnvironment mockEnvironment;
     
-    @Before
-    public void setUp() throws Exception {
+    @BeforeEach
+    void setUp() throws Exception {
         mockEnvironment = new MockEnvironment();
         EnvUtil.setEnvironment(mockEnvironment);
         clientConfig = ClientConfig.getInstance();
     }
     
     @Test
-    public void testUpgradeConfig() throws InterruptedException {
+    void testUpgradeConfig() throws InterruptedException {
         mockEnvironment.setProperty(ClientConstants.CLIENT_EXPIRED_TIME_CONFIG_KEY, String.valueOf(EXPIRED_TIME));
         NotifyCenter.publishEvent(ServerConfigChangeEvent.newEvent());
         TimeUnit.SECONDS.sleep(1);
+        assertEquals(EXPIRED_TIME, clientConfig.getClientExpiredTime());
+    }
+    
+    @Test
+    void testInitConfigFormEnv() throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+        mockEnvironment.setProperty(ClientConstants.CLIENT_EXPIRED_TIME_CONFIG_KEY, String.valueOf(EXPIRED_TIME));
+        Constructor<ClientConfig> declaredConstructor = ClientConfig.class.getDeclaredConstructor();
+        declaredConstructor.setAccessible(true);
+        ClientConfig clientConfig = declaredConstructor.newInstance();
         assertEquals(EXPIRED_TIME, clientConfig.getClientExpiredTime());
     }
 }

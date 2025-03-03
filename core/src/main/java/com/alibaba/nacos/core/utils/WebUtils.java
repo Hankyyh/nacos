@@ -54,6 +54,12 @@ public class WebUtils {
     
     private static final String TMP_SUFFIX = ".tmp";
     
+    private static final String X_REAL_IP = "X-Real-IP";
+    
+    private static final String X_FORWARDED_FOR = "X-Forwarded-For";
+    
+    private static final String X_FORWARDED_FOR_SPLIT_SYMBOL = ",";
+    
     /**
      * get target value from parameterMap, if not found will throw {@link IllegalArgumentException}.
      *
@@ -79,9 +85,6 @@ public class WebUtils {
      * @return value
      */
     public static String optional(final HttpServletRequest req, final String key, final String defaultValue) {
-        if (!req.getParameterMap().containsKey(key) || req.getParameterMap().get(key)[0] == null) {
-            return defaultValue;
-        }
         String value = req.getParameter(key);
         if (StringUtils.isBlank(value)) {
             return defaultValue;
@@ -250,5 +253,23 @@ public class WebUtils {
             success.run();
             deferredResult.setResult(t);
         });
+    }
+    
+    /**
+     * get real client ip
+     *
+     * <p>first use X-Forwarded-For header    https://zh.wikipedia.org/wiki/X-Forwarded-For next nginx X-Real-IP last
+     * {@link HttpServletRequest#getRemoteAddr()}
+     *
+     * @param request {@link HttpServletRequest}
+     * @return remote ip address.
+     */
+    public static String getRemoteIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader(X_FORWARDED_FOR);
+        if (!StringUtils.isBlank(xForwardedFor)) {
+            return xForwardedFor.split(X_FORWARDED_FOR_SPLIT_SYMBOL)[0].trim();
+        }
+        String nginxHeader = request.getHeader(X_REAL_IP);
+        return StringUtils.isBlank(nginxHeader) ? request.getRemoteAddr() : nginxHeader;
     }
 }

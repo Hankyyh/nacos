@@ -16,19 +16,19 @@
 
 package com.alibaba.nacos.core.auth;
 
-import com.alibaba.nacos.auth.AuthManager;
+import com.alibaba.nacos.auth.HttpProtocolAuthService;
 import com.alibaba.nacos.auth.annotation.Secured;
-import com.alibaba.nacos.auth.common.AuthConfigs;
-import com.alibaba.nacos.auth.exception.AccessException;
-import com.alibaba.nacos.auth.model.Permission;
-import com.alibaba.nacos.auth.parser.ResourceParser;
+import com.alibaba.nacos.auth.config.AuthConfigs;
+import com.alibaba.nacos.auth.serveridentity.ServerIdentityResult;
 import com.alibaba.nacos.common.utils.ExceptionUtil;
 import com.alibaba.nacos.core.code.ControllerMethodsCache;
-import com.alibaba.nacos.sys.env.Constants;
+import com.alibaba.nacos.core.context.RequestContext;
+import com.alibaba.nacos.core.context.RequestContextHolder;
 import com.alibaba.nacos.core.utils.Loggers;
-import com.alibaba.nacos.core.utils.WebUtils;
-import com.alibaba.nacos.common.utils.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.alibaba.nacos.plugin.auth.api.IdentityContext;
+import com.alibaba.nacos.plugin.auth.api.Permission;
+import com.alibaba.nacos.plugin.auth.api.Resource;
+import com.alibaba.nacos.plugin.auth.exception.AccessException;
 
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
@@ -39,8 +39,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Unified filter to handle authentication and authorization.
@@ -50,16 +48,18 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class AuthFilter implements Filter {
     
-    @Autowired
-    private AuthConfigs authConfigs;
+    private final AuthConfigs authConfigs;
     
-    @Autowired
-    private AuthManager authManager;
+    private final ControllerMethodsCache methodsCache;
     
-    @Autowired
-    private ControllerMethodsCache methodsCache;
+    private final HttpProtocolAuthService protocolAuthService;
     
-    private Map<Class<? extends ResourceParser>, ResourceParser> parserInstance = new ConcurrentHashMap<>();
+    public AuthFilter(AuthConfigs authConfigs, ControllerMethodsCache methodsCache) {
+        this.authConfigs = authConfigs;
+        this.methodsCache = methodsCache;
+        this.protocolAuthService = new HttpProtocolAuthService(authConfigs);
+        this.protocolAuthService.initialize();
+    }
     
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -73,28 +73,6 @@ public class AuthFilter implements Filter {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse resp = (HttpServletResponse) response;
         
-        if (authConfigs.isEnableUserAgentAuthWhite()) {
-            String userAgent = WebUtils.getUserAgent(req);
-            if (StringUtils.startsWith(userAgent, Constants.NACOS_SERVER_HEADER)) {
-                chain.doFilter(request, response);
-                return;
-            }
-        } else if (StringUtils.isNotBlank(authConfigs.getServerIdentityKey()) && StringUtils
-                .isNotBlank(authConfigs.getServerIdentityValue())) {
-            String serverIdentity = req.getHeader(authConfigs.getServerIdentityKey());
-            if (authConfigs.getServerIdentityValue().equals(serverIdentity)) {
-                chain.doFilter(request, response);
-                return;
-            }
-            Loggers.AUTH.warn("Invalid server identity value for {} from {}", authConfigs.getServerIdentityKey(),
-                    req.getRemoteHost());
-        } else {
-            resp.sendError(HttpServletResponse.SC_FORBIDDEN,
-                    "Invalid server identity key or value, Please make sure set `nacos.core.auth.server.identity.key`"
-                            + " and `nacos.core.auth.server.identity.value`, or open `nacos.core.auth.enable.userAgentAuthWhite`");
-            return;
-        }
-        
         try {
             
             Method method = methodsCache.getMethod(req);
@@ -104,28 +82,49 @@ public class AuthFilter implements Filter {
                 return;
             }
             
-            if (method.isAnnotationPresent(Secured.class) && authConfigs.isAuthEnabled()) {
+            if (method.isAnnotationPresent(Secured.class)) {
                 
                 if (Loggers.AUTH.isDebugEnabled()) {
                     Loggers.AUTH.debug("auth start, request: {} {}", req.getMethod(), req.getRequestURI());
                 }
                 
                 Secured secured = method.getAnnotation(Secured.class);
+                
+                ServerIdentityResult serverIdentityResult = protocolAuthService.checkServerIdentity(req, secured);
+                switch (serverIdentityResult.getStatus()) {
+                    case FAIL:
+                        resp.sendError(HttpServletResponse.SC_FORBIDDEN, serverIdentityResult.getMessage());
+                        return;
+                    case MATCHED:
+                        chain.doFilter(request, response);
+                        return;
+                    default:
+                        break;
+                }
+                
+                if (!protocolAuthService.enableAuth(secured)) {
+                    chain.doFilter(request, response);
+                    return;
+                }
+                Resource resource = protocolAuthService.parseResource(req, secured);
+                IdentityContext identityContext = protocolAuthService.parseIdentity(req);
+                boolean result = protocolAuthService.validateIdentity(identityContext, resource);
+                RequestContext requestContext = RequestContextHolder.getContext();
+                requestContext.getAuthContext().setIdentityContext(identityContext);
+                requestContext.getAuthContext().setResource(resource);
+                if (null == requestContext.getAuthContext().getAuthResult()) {
+                    requestContext.getAuthContext().setAuthResult(result);
+                }
+                if (!result) {
+                    // TODO Get reason of failure
+                    throw new AccessException("Validate Identity failed.");
+                }
                 String action = secured.action().toString();
-                String resource = secured.resource();
-                
-                if (StringUtils.isBlank(resource)) {
-                    ResourceParser parser = getResourceParser(secured.parser());
-                    resource = parser.parseName(req);
+                result = protocolAuthService.validateAuthority(identityContext, new Permission(resource, action));
+                if (!result) {
+                    // TODO Get reason of failure
+                    throw new AccessException("Validate Authority failed.");
                 }
-                
-                if (StringUtils.isBlank(resource)) {
-                    // deny if we don't find any resource:
-                    throw new AccessException("resource name invalid!");
-                }
-                
-                authManager.auth(new Permission(resource, action), authManager.login(req));
-                
             }
             chain.doFilter(request, response);
         } catch (AccessException e) {
@@ -137,17 +136,8 @@ public class AuthFilter implements Filter {
         } catch (IllegalArgumentException e) {
             resp.sendError(HttpServletResponse.SC_BAD_REQUEST, ExceptionUtil.getAllExceptionMsg(e));
         } catch (Exception e) {
-            resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Server failed," + e.getMessage());
+            Loggers.AUTH.warn("[AUTH-FILTER] Server failed: ", e);
+            resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Server failed, " + e.getMessage());
         }
-    }
-    
-    private ResourceParser getResourceParser(Class<? extends ResourceParser> parseClass)
-            throws IllegalAccessException, InstantiationException {
-        ResourceParser parser = parserInstance.get(parseClass);
-        if (parser == null) {
-            parser = parseClass.newInstance();
-            parserInstance.put(parseClass, parser);
-        }
-        return parser;
     }
 }

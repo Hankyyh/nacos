@@ -30,11 +30,13 @@ import {
   ConfigProvider,
   Switch,
 } from '@alifd/next';
-import { request } from '../../../globalLib';
+import { getParams, setParams, request } from '../../../globalLib';
 import { generateUrl } from '../../../utils/nacosutil';
 import RegionGroup from '../../../components/RegionGroup';
 import EditServiceDialog from '../ServiceDetail/EditServiceDialog';
 import ShowServiceCodeing from 'components/ShowCodeing/ShowServiceCodeing';
+import PageTitle from '../../../components/PageTitle';
+import TotalRender from '../../../components/Page/TotalRender';
 
 import './ServiceList.scss';
 import { GLOBAL_PAGE_SIZE_LIST } from '../../../constants';
@@ -63,8 +65,8 @@ class ServiceList extends React.Component {
       currentPage: 1,
       dataSource: [],
       search: {
-        serviceName: '',
-        groupName: '',
+        serviceName: getParams('serviceNameParam') || '',
+        groupName: getParams('groupNameParam') || '',
       },
       hasIpCount: !(localStorage.getItem('hasIpCount') === 'false'),
     };
@@ -95,6 +97,10 @@ class ServiceList extends React.Component {
       `serviceNameParam=${search.serviceName}`,
       `groupNameParam=${search.groupName}`,
     ];
+    setParams({
+      serviceNameParam: search.serviceName,
+      groupNameParam: search.groupName,
+    });
     this.openLoading();
     request({
       url: `v1/ns/catalog/services?${parameter.join('&')}`,
@@ -169,10 +175,11 @@ class ServiceList extends React.Component {
     });
   }
 
-  setNowNameSpace = (nowNamespaceName, nowNamespaceId) =>
+  setNowNameSpace = (nowNamespaceName, nowNamespaceId, nowNamespaceDesc) =>
     this.setState({
       nowNamespaceName,
       nowNamespaceId,
+      nowNamespaceDesc,
     });
 
   rowColor = row => ({ className: !row.healthyInstanceCount ? 'row-bg-red' : '' });
@@ -195,25 +202,24 @@ class ServiceList extends React.Component {
       deleteAction,
       subscriber,
     } = locale;
-    const { search, nowNamespaceName, nowNamespaceId, hasIpCount } = this.state;
+    const { search, nowNamespaceName, nowNamespaceId, nowNamespaceDesc, hasIpCount } = this.state;
     const { init, getValue } = this.field;
     this.init = init;
     this.getValue = getValue;
 
     return (
       <div className="main-container service-management">
-        <div style={{ marginTop: -15 }}>
-          <RegionGroup
-            setNowNameSpace={this.setNowNameSpace}
-            namespaceCallBack={this.getQueryLater}
-          />
-        </div>
-        <h3 className="page-title">
-          <span className="title-item">{serviceList}</span>
-          <span className="title-item">|</span>
-          <span className="title-item">{nowNamespaceName}</span>
-          <span className="title-item">{nowNamespaceId}</span>
-        </h3>
+        <PageTitle
+          title={serviceList}
+          desc={nowNamespaceDesc}
+          namespaceId={nowNamespaceId}
+          namespaceName={nowNamespaceName}
+          nameSpace
+        />
+        <RegionGroup
+          setNowNameSpace={this.setNowNameSpace}
+          namespaceCallBack={this.getQueryLater}
+        />
         <Row
           className="demo-row"
           style={{
@@ -223,6 +229,11 @@ class ServiceList extends React.Component {
         >
           <Col span="24">
             <Form inline field={this.field}>
+              <FormItem label="">
+                <Button type="primary" onClick={() => this.openEditServiceDialog()}>
+                  {create}
+                </Button>
+              </FormItem>
               <FormItem label={serviceName}>
                 <Input
                   placeholder={serviceNamePlaceholder}
@@ -245,7 +256,7 @@ class ServiceList extends React.Component {
                   }
                 />
               </FormItem>
-              <Form.Item label={`${hiddenEmptyService}:`}>
+              <Form.Item label={`${hiddenEmptyService}`}>
                 <Switch
                   checked={hasIpCount}
                   onChange={hasIpCount =>
@@ -265,11 +276,6 @@ class ServiceList extends React.Component {
                   {query}
                 </Button>
               </FormItem>
-              <FormItem label="" style={{ float: 'right' }}>
-                <Button type="secondary" onClick={() => this.openEditServiceDialog()}>
-                  {create}
-                </Button>
-              </FormItem>
             </Form>
           </Col>
         </Row>
@@ -278,7 +284,7 @@ class ServiceList extends React.Component {
             <Table
               dataSource={this.state.dataSource}
               locale={{ empty: pubNoData }}
-              getRowProps={row => this.rowColor(row)}
+              rowProps={row => this.rowColor(row)}
               loading={this.state.loading}
             >
               <Column title={locale.columnServiceName} dataIndex="name" />
@@ -338,6 +344,7 @@ class ServiceList extends React.Component {
             popupProps={{ align: 'bl tl' }}
             total={this.state.total}
             pageSize={this.state.pageSize}
+            totalRender={total => <TotalRender locale={locale} total={total} />}
             onPageSizeChange={pageSize => this.handlePageSizeChange(pageSize)}
             onChange={currentPage => this.setState({ currentPage }, () => this.queryServiceList())}
           />
