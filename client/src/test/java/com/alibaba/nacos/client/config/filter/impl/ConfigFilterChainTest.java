@@ -17,21 +17,23 @@
 package com.alibaba.nacos.client.config.filter.impl;
 
 import com.alibaba.nacos.api.exception.NacosException;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-public class ConfigFilterChainTest {
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class ConfigFilterChainTest {
     
     @Test
-    public void testConfigFilterChain() {
+    void testConfigFilterChain() {
         ConfigFilterChainManager configFilterChainManager = new ConfigFilterChainManager(null);
         configFilterChainManager.addFilter(new DemoFilter1());
         configFilterChainManager.addFilter(new DemoFilter2());
         ConfigRequest configRequest = new ConfigRequest();
+        ConfigResponse configResponse = new ConfigResponse();
         try {
-            configFilterChainManager.doFilter(configRequest, null);
-            Assert.assertEquals(DemoFilter1.class.getName(), configRequest.getParameter("filter1"));
-            Assert.assertEquals(DemoFilter2.class.getName(), configRequest.getParameter("filter2"));
+            configFilterChainManager.doFilter(configRequest, configResponse);
+            assertEquals(DemoFilter1.class.getName(), configRequest.getParameter("filter1"));
+            assertEquals(DemoFilter2.class.getName(), configRequest.getParameter("filter2"));
         } catch (NacosException e) {
             e.printStackTrace();
         }

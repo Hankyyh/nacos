@@ -17,21 +17,22 @@
 package com.alibaba.nacos.naming.push.v2.executor;
 
 import com.alibaba.nacos.api.naming.pojo.ServiceInfo;
-import com.alibaba.nacos.api.remote.PushCallBack;
+import com.alibaba.nacos.naming.core.v2.metadata.ServiceMetadata;
 import com.alibaba.nacos.naming.pojo.Subscriber;
 import com.alibaba.nacos.naming.push.v2.PushDataWrapper;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import com.alibaba.nacos.naming.push.v2.task.NamingPushCallback;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.UUID;
 
 import static org.mockito.Mockito.verify;
 
-@RunWith(MockitoJUnitRunner.class)
-public class PushExecutorDelegateTest {
+@ExtendWith(MockitoExtension.class)
+class PushExecutorDelegateTest {
     
     private final String udpClientId = "1.1.1.1:60000#true";
     
@@ -47,38 +48,41 @@ public class PushExecutorDelegateTest {
     private Subscriber subscriber;
     
     @Mock
-    private PushCallBack pushCallBack;
+    private NamingPushCallback pushCallBack;
     
     private PushDataWrapper pushdata;
     
     private PushExecutorDelegate delegate;
     
-    @Before
-    public void setUp() throws Exception {
-        pushdata = new PushDataWrapper(new ServiceInfo("G@@S"));
+    private ServiceMetadata serviceMetadata;
+    
+    @BeforeEach
+    void setUp() throws Exception {
+        serviceMetadata = new ServiceMetadata();
+        pushdata = new PushDataWrapper(serviceMetadata, new ServiceInfo("G@@S"));
         delegate = new PushExecutorDelegate(pushExecutorRpc, pushExecutorUdp);
     }
     
     @Test
-    public void testDoPushForUdp() {
+    void testDoPushForUdp() {
         delegate.doPush(udpClientId, subscriber, pushdata);
         verify(pushExecutorUdp).doPush(udpClientId, subscriber, pushdata);
     }
     
     @Test
-    public void testDoPushForRpc() {
+    void testDoPushForRpc() {
         delegate.doPush(rpcClientId, subscriber, pushdata);
         verify(pushExecutorRpc).doPush(rpcClientId, subscriber, pushdata);
     }
     
     @Test
-    public void doPushWithCallbackForUdp() {
+    void doPushWithCallbackForUdp() {
         delegate.doPushWithCallback(udpClientId, subscriber, pushdata, pushCallBack);
         verify(pushExecutorUdp).doPushWithCallback(udpClientId, subscriber, pushdata, pushCallBack);
     }
     
     @Test
-    public void doPushWithCallbackForRpc() {
+    void doPushWithCallbackForRpc() {
         delegate.doPushWithCallback(rpcClientId, subscriber, pushdata, pushCallBack);
         verify(pushExecutorRpc).doPushWithCallback(rpcClientId, subscriber, pushdata, pushCallBack);
     }

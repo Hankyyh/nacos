@@ -65,7 +65,10 @@ public class DefaultPublisher extends Thread implements EventPublisher {
         setName("nacos.publisher-" + type.getName());
         this.eventType = type;
         this.queueMaxSize = bufferSize;
-        this.queue = new ArrayBlockingQueue<>(bufferSize);
+        if (this.queueMaxSize == -1) {
+            this.queueMaxSize = ringBufferSize;
+        }
+        this.queue = new ArrayBlockingQueue<>(this.queueMaxSize);
         start();
     }
     
@@ -78,9 +81,6 @@ public class DefaultPublisher extends Thread implements EventPublisher {
         if (!initialized) {
             // start just called once
             super.start();
-            if (queueMaxSize == -1) {
-                queueMaxSize = ringBufferSize;
-            }
             initialized = true;
         }
     }
@@ -102,18 +102,12 @@ public class DefaultPublisher extends Thread implements EventPublisher {
             int waitTimes = 60;
             // To ensure that messages are not lost, enable EventHandler when
             // waiting for the first Subscriber to register
-            for (; ; ) {
-                if (shutdown || hasSubscriber() || waitTimes <= 0) {
-                    break;
-                }
+            while (!shutdown && !hasSubscriber() && waitTimes > 0) {
                 ThreadUtils.sleep(1000L);
                 waitTimes--;
             }
-            
-            for (; ; ) {
-                if (shutdown) {
-                    break;
-                }
+
+            while (!shutdown) {
                 final Event event = queue.take();
                 receiveEvent(event);
                 UPDATER.compareAndSet(this, lastEventSequence, Math.max(lastEventSequence, event.sequence()));
@@ -174,12 +168,16 @@ public class DefaultPublisher extends Thread implements EventPublisher {
         final long currentEventSequence = event.sequence();
         
         if (!hasSubscriber()) {
-            LOGGER.warn("[NotifyCenter] the {} is lost, because there is no subscriber.");
+            LOGGER.warn("[NotifyCenter] the {} is lost, because there is no subscriber.", event);
             return;
         }
         
         // Notification single event listener
         for (Subscriber subscriber : subscribers) {
+            if (!subscriber.scopeMatches(event)) {
+                continue;
+            }
+            
             // Whether to ignore expiration events
             if (subscriber.ignoreExpireEvent() && lastEventSequence > currentEventSequence) {
                 LOGGER.debug("[NotifyCenter] the {} is unacceptable to this subscriber, because had expire",
