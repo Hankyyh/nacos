@@ -22,17 +22,20 @@ import com.alibaba.nacos.api.remote.request.HealthCheckRequest;
 import com.alibaba.nacos.api.remote.request.Request;
 import com.alibaba.nacos.api.remote.request.RequestMeta;
 import com.alibaba.nacos.api.remote.response.Response;
-import com.alibaba.nacos.auth.AuthManager;
 import com.alibaba.nacos.auth.annotation.Secured;
-import com.alibaba.nacos.auth.common.AuthConfigs;
+import com.alibaba.nacos.auth.config.AuthConfigs;
+import com.alibaba.nacos.core.context.RequestContextHolder;
 import com.alibaba.nacos.core.remote.RequestHandler;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * {@link RemoteRequestAuthFilter} unit test.
@@ -40,8 +43,8 @@ import org.mockito.junit.MockitoJUnitRunner;
  * @author chenglu
  * @date 2021-07-06 16:14
  */
-@RunWith(MockitoJUnitRunner.class)
-public class RemoteRequestAuthFilterTest {
+@ExtendWith(MockitoExtension.class)
+class RemoteRequestAuthFilterTest {
     
     @InjectMocks
     private RemoteRequestAuthFilter remoteRequestAuthFilter;
@@ -49,26 +52,28 @@ public class RemoteRequestAuthFilterTest {
     @Mock
     private AuthConfigs authConfigs;
     
-    @Mock
-    private AuthManager authManager;
+    @AfterEach
+    void tearDown() {
+        RequestContextHolder.removeContext();
+    }
     
     @Test
-    public void testFilter() {
+    void testFilter() {
         Mockito.when(authConfigs.isAuthEnabled()).thenReturn(true);
         
         Request healthCheckRequest = new HealthCheckRequest();
-    
+        
         try {
             Response healthCheckResponse = remoteRequestAuthFilter.filter(healthCheckRequest, new RequestMeta(), MockRequestHandler.class);
-            Assert.assertNull(healthCheckResponse);
+            assertNull(healthCheckResponse);
         } catch (NacosException e) {
             e.printStackTrace();
-            Assert.fail(e.getMessage());
+            fail(e.getMessage());
         }
     }
     
     class MockRequestHandler extends RequestHandler {
-    
+        
         @Secured(resource = "xxx")
         @Override
         public Response handle(Request request, RequestMeta meta) throws NacosException {

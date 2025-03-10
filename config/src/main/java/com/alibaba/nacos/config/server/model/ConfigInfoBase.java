@@ -32,7 +32,7 @@ import java.io.Serializable;
  */
 public class ConfigInfoBase implements Serializable, Comparable<ConfigInfoBase> {
     
-    static final long serialVersionUID = -1L;
+    static final long serialVersionUID = 265316491795790798L;
     
     @JsonSerialize(using = ToStringSerializer.class)
     private long id;
@@ -45,6 +45,8 @@ public class ConfigInfoBase implements Serializable, Comparable<ConfigInfoBase> 
     
     private String md5;
     
+    private String encryptedDataKey;
+    
     public ConfigInfoBase() {
     
     }
@@ -54,7 +56,7 @@ public class ConfigInfoBase implements Serializable, Comparable<ConfigInfoBase> 
         this.group = group;
         this.content = content;
         if (this.content != null) {
-            this.md5 = MD5Utils.md5Hex(this.content, Constants.ENCODE);
+            this.md5 = MD5Utils.md5Hex(this.content, Constants.PERSIST_ENCODE);
         }
     }
     
@@ -100,6 +102,14 @@ public class ConfigInfoBase implements Serializable, Comparable<ConfigInfoBase> 
     
     public void dump(PrintWriter writer) {
         writer.write(this.content);
+    }
+    
+    public String getEncryptedDataKey() {
+        return encryptedDataKey;
+    }
+    
+    public void setEncryptedDataKey(String encryptedDataKey) {
+        this.encryptedDataKey = encryptedDataKey;
     }
     
     @Override
@@ -158,17 +168,6 @@ public class ConfigInfoBase implements Serializable, Comparable<ConfigInfoBase> 
             }
         }
         return 0;
-    }
-    
-    @Override
-    public int hashCode() {
-        final int prime = 31;
-        int result = 1;
-        result = prime * result + ((content == null) ? 0 : content.hashCode());
-        result = prime * result + ((dataId == null) ? 0 : dataId.hashCode());
-        result = prime * result + ((group == null) ? 0 : group.hashCode());
-        result = prime * result + ((md5 == null) ? 0 : md5.hashCode());
-        return result;
     }
     
     @Override

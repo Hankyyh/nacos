@@ -16,6 +16,12 @@
 
 package com.alibaba.nacos.common.remote.client.grpc;
 
+import com.alibaba.nacos.api.ability.constant.AbilityMode;
+import com.alibaba.nacos.api.common.Constants;
+import com.alibaba.nacos.common.remote.client.RpcClientTlsConfig;
+
+import java.util.Map;
+
 /**
  * gRPC client for sdk.
  *
@@ -25,7 +31,7 @@ package com.alibaba.nacos.common.remote.client.grpc;
 public class GrpcSdkClient extends GrpcClient {
     
     /**
-     * Empty constructor.
+     * Constructor.
      *
      * @param name name of client.
      */
@@ -33,9 +39,42 @@ public class GrpcSdkClient extends GrpcClient {
         super(name);
     }
     
+    /**
+     * Constructor.
+     *
+     * @param name               name of client.
+     * @param threadPoolCoreSize .
+     * @param threadPoolMaxSize  .
+     * @param labels             .
+     */
+    public GrpcSdkClient(String name, Integer threadPoolCoreSize, Integer threadPoolMaxSize,
+            Map<String, String> labels) {
+        this(name, threadPoolCoreSize, threadPoolMaxSize, labels, null);
+    }
+    
+    public GrpcSdkClient(String name, Integer threadPoolCoreSize, Integer threadPoolMaxSize, Map<String, String> labels,
+            RpcClientTlsConfig tlsConfig) {
+        super(name, threadPoolCoreSize, threadPoolMaxSize, labels, tlsConfig);
+    }
+    
+    @Override
+    protected AbilityMode abilityMode() {
+        return AbilityMode.SDK_CLIENT;
+    }
+    
+    /**
+     * constructor.
+     *
+     * @param config of GrpcClientConfig.
+     */
+    public GrpcSdkClient(GrpcClientConfig config) {
+        super(config);
+    }
+    
     @Override
     public int rpcPortOffset() {
-        return 1000;
+        return Integer.parseInt(System.getProperty(GrpcConstants.NACOS_SERVER_GRPC_PORT_OFFSET_KEY,
+                String.valueOf(Constants.SDK_GRPC_PORT_DEFAULT_OFFSET)));
     }
     
 }

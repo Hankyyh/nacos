@@ -44,11 +44,9 @@ public class Balancer {
          */
         public static List<Instance> selectAll(ServiceInfo serviceInfo) {
             List<Instance> hosts = serviceInfo.getHosts();
-            
             if (CollectionUtils.isEmpty(hosts)) {
                 throw new IllegalStateException("no host to srv for serviceInfo: " + serviceInfo.getName());
             }
-            
             return hosts;
         }
     
@@ -59,14 +57,7 @@ public class Balancer {
          * @return random instance
          */
         public static Instance selectHost(ServiceInfo dom) {
-            
-            List<Instance> hosts = selectAll(dom);
-            
-            if (CollectionUtils.isEmpty(hosts)) {
-                throw new IllegalStateException("no host to srv for service: " + dom.getName());
-            }
-            
-            return getHostByRandomWeight(hosts);
+            return getHostByRandomWeight(selectAll(dom));
         }
     }
     
@@ -83,14 +74,14 @@ public class Balancer {
             return null;
         }
         NAMING_LOGGER.debug("new Chooser");
-        List<Pair<Instance>> hostsWithWeight = new ArrayList<Pair<Instance>>();
+        List<Pair<Instance>> hostsWithWeight = new ArrayList<>();
         for (Instance host : hosts) {
             if (host.isHealthy()) {
                 hostsWithWeight.add(new Pair<Instance>(host, host.getWeight()));
             }
         }
         NAMING_LOGGER.debug("for (Host host : hosts)");
-        Chooser<String, Instance> vipChooser = new Chooser<String, Instance>("www.taobao.com");
+        Chooser<String, Instance> vipChooser = new Chooser<>("www.taobao.com");
         vipChooser.refresh(hostsWithWeight);
         NAMING_LOGGER.debug("vipChooser.refresh");
         return vipChooser.randomWithWeight();

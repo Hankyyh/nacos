@@ -27,9 +27,11 @@ import com.alibaba.nacos.consistency.entity.Response;
 import com.alibaba.nacos.consistency.entity.WriteRequest;
 import com.alibaba.nacos.consistency.snapshot.SnapshotOperation;
 import com.alibaba.nacos.core.distributed.ProtocolManager;
+import com.alibaba.nacos.naming.core.v2.ServiceManager;
 import com.alibaba.nacos.naming.core.v2.event.service.ServiceEvent;
 import com.alibaba.nacos.naming.core.v2.pojo.Service;
 import com.alibaba.nacos.naming.constants.Constants;
+import com.alibaba.nacos.naming.misc.Loggers;
 import org.springframework.stereotype.Component;
 
 import java.lang.reflect.Type;
@@ -77,9 +79,9 @@ public class InstanceMetadataProcessor extends RequestProcessor4CP {
     
     @Override
     public Response onApply(WriteRequest request) {
-        MetadataOperation<InstanceMetadata> op = serializer.deserialize(request.getData().toByteArray(), processType);
         readLock.lock();
         try {
+            MetadataOperation<InstanceMetadata> op = serializer.deserialize(request.getData().toByteArray(), processType);
             switch (DataOperation.valueOf(request.getOperation())) {
                 case ADD:
                 case CHANGE:
@@ -94,7 +96,9 @@ public class InstanceMetadataProcessor extends RequestProcessor4CP {
             }
             return Response.newBuilder().setSuccess(true).build();
         } catch (Exception e) {
-            return Response.newBuilder().setSuccess(false).setErrMsg(e.getMessage()).build();
+            Loggers.RAFT.error("onApply {} instance metadata operation failed. ", request.getOperation(), e);
+            String errorMessage = null == e.getMessage() ? e.getClass().getName() : e.getMessage();
+            return Response.newBuilder().setSuccess(false).setErrMsg(errorMessage).build();
         } finally {
             readLock.unlock();
         }
@@ -102,12 +106,14 @@ public class InstanceMetadataProcessor extends RequestProcessor4CP {
     
     private void updateInstanceMetadata(MetadataOperation<InstanceMetadata> op) {
         Service service = Service.newService(op.getNamespace(), op.getGroup(), op.getServiceName());
+        service = ServiceManager.getInstance().getSingleton(service);
         namingMetadataManager.updateInstanceMetadata(service, op.getTag(), op.getMetadata());
         NotifyCenter.publishEvent(new ServiceEvent.ServiceChangedEvent(service, true));
     }
     
     private void deleteInstanceMetadata(MetadataOperation<InstanceMetadata> op) {
         Service service = Service.newService(op.getNamespace(), op.getGroup(), op.getServiceName());
+        service = ServiceManager.getInstance().getSingleton(service);
         namingMetadataManager.removeInstanceMetadata(service, op.getTag());
     }
     

@@ -34,6 +34,8 @@ class HistoryDetail extends React.Component {
     super(props);
     this.state = {
       showmore: false,
+      currentPublishType: '',
+      grayRule: '',
     };
     this.edasAppName = getParams('edasAppName');
     this.edasAppId = getParams('edasAppId');
@@ -65,6 +67,9 @@ class HistoryDetail extends React.Component {
       success(result) {
         if (result != null) {
           const data = result;
+          const extInfo = data.extInfo ? JSON.parse(data.extInfo) : {};
+          const grayRule = extInfo.gray_rule ? JSON.parse(extInfo.gray_rule) : {};
+
           self.field.setValue('dataId', data.dataId);
           self.field.setValue('content', data.content);
           self.field.setValue('appName', self.inApp ? self.edasAppName : data.appName);
@@ -74,6 +79,12 @@ class HistoryDetail extends React.Component {
           self.field.setValue('opType', data.opType.trim());
           self.field.setValue('group', data.group);
           self.field.setValue('md5', data.md5);
+          self.setState({
+            currentPublishType: data.publishType,
+            ...(data.publishType === 'gray' && {
+              grayRule: grayRule.expr || '',
+            }),
+          });
         }
       },
     });
@@ -100,6 +111,7 @@ class HistoryDetail extends React.Component {
   render() {
     const { locale = {} } = this.props;
     const { init } = this.field;
+    const { currentPublishType, grayRule } = this.state;
     const formItemLayout = {
       labelCol: {
         fixedSpan: 6,
@@ -110,10 +122,13 @@ class HistoryDetail extends React.Component {
     };
     const { getOpType } = this;
     return (
-      <div style={{ padding: 10 }}>
+      <div>
         <h1>{locale.historyDetails}</h1>
         <Form field={this.field}>
-          <Form.Item label="Data ID:" required {...formItemLayout}>
+          <Form.Item label={locale.namespace} required {...formItemLayout}>
+            <p>{this.tenant}</p>
+          </Form.Item>
+          <Form.Item label="Data ID" required {...formItemLayout}>
             <Input htmlType="text" readOnly {...init('dataId')} />
             <div style={{ marginTop: 10 }}>
               <a style={{ fontSize: '12px' }} onClick={this.toggleMore.bind(this)}>
@@ -122,13 +137,27 @@ class HistoryDetail extends React.Component {
             </div>
           </Form.Item>
           <div style={{ overflow: 'hidden', height: this.state.showmore ? 'auto' : '0' }}>
-            <Form.Item label="Group:" required {...formItemLayout}>
+            <Form.Item label="Group" required {...formItemLayout}>
               <Input htmlType="text" readOnly {...init('group')} />
             </Form.Item>
             <Form.Item label={locale.home} {...formItemLayout}>
               <Input htmlType="text" readOnly {...init('appName')} />
             </Form.Item>
           </div>
+          <Form.Item label={locale.publishType} required {...formItemLayout}>
+            <Input
+              htmlType="text"
+              readOnly
+              value={currentPublishType === 'gray' ? locale.gray : locale.formal}
+            />
+          </Form.Item>
+          {currentPublishType === 'gray' && (
+            <>
+              <Form.Item label={locale.grayRule} required {...formItemLayout}>
+                <Input htmlType="text" readOnly value={grayRule} />
+              </Form.Item>
+            </>
+          )}
           <Form.Item label={locale.operator} required {...formItemLayout}>
             <Input htmlType="text" readOnly {...init('srcUser')} />
           </Form.Item>

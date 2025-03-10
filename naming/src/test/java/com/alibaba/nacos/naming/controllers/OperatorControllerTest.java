@@ -17,28 +17,36 @@
 
 package com.alibaba.nacos.naming.controllers;
 
-import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.naming.cluster.ServerStatus;
 import com.alibaba.nacos.naming.cluster.ServerStatusManager;
-import com.alibaba.nacos.naming.consistency.persistent.raft.RaftCore;
 import com.alibaba.nacos.naming.core.DistroMapper;
-import com.alibaba.nacos.naming.core.Service;
-import com.alibaba.nacos.naming.core.ServiceManager;
+import com.alibaba.nacos.naming.core.v2.client.Client;
+import com.alibaba.nacos.naming.core.v2.client.impl.IpPortBasedClient;
 import com.alibaba.nacos.naming.core.v2.client.manager.ClientManager;
+import com.alibaba.nacos.naming.core.v2.pojo.InstancePublishInfo;
+import com.alibaba.nacos.naming.core.v2.pojo.Service;
 import com.alibaba.nacos.naming.misc.SwitchDomain;
 import com.alibaba.nacos.naming.misc.SwitchManager;
+import com.alibaba.nacos.naming.monitor.MetricsMonitor;
+import com.alibaba.nacos.sys.env.Constants;
+import com.alibaba.nacos.sys.env.EnvUtil;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.Collection;
 import java.util.HashSet;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * {@link OperatorController} unit test.
@@ -46,8 +54,8 @@ import java.util.HashSet;
  * @author chenglu
  * @date 2021-07-21 19:28
  */
-@RunWith(MockitoJUnitRunner.class)
-public class OperatorControllerTest {
+@ExtendWith(MockitoExtension.class)
+class OperatorControllerTest {
     
     @InjectMocks
     private OperatorController operatorController;
@@ -62,92 +70,78 @@ public class OperatorControllerTest {
     private ServerStatusManager serverStatusManager;
     
     @Mock
-    private ServiceManager serviceManager;
-    
-    @Mock
     private ClientManager clientManager;
-    
-    @Mock
-    private RaftCore raftCore;
     
     @Mock
     private DistroMapper distroMapper;
     
+    @BeforeEach
+    void setUp() {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setProperty(Constants.SUPPORT_UPGRADE_FROM_1X, "true");
+        EnvUtil.setEnvironment(environment);
+    }
+    
     @Test
-    public void testPushState() {
+    void testPushState() {
+        MetricsMonitor.resetPush();
         ObjectNode objectNode = operatorController.pushState(true, true);
-        Assert.assertTrue(objectNode.toString().contains("succeed\":0"));
+        assertTrue(objectNode.toString().contains("succeed\":0"));
     }
     
     @Test
-    public void testSwitchDomain() {
+    void testSwitchDomain() {
         SwitchDomain switchDomain = operatorController.switches(new MockHttpServletRequest());
-        Assert.assertEquals(this.switchDomain, switchDomain);
+        assertEquals(this.switchDomain, switchDomain);
     }
     
     @Test
-    public void testUpdateSwitch() {
+    void testUpdateSwitch() {
         try {
             String res = operatorController.updateSwitch(true, "test", "test");
-            Assert.assertEquals("ok", res);
+            assertEquals("ok", res);
         } catch (Exception e) {
             e.printStackTrace();
-            Assert.fail(e.getMessage());
+            fail(e.getMessage());
         }
     }
     
     @Test
-    public void testMetrics() {
+    void testMetrics() {
         Mockito.when(serverStatusManager.getServerStatus()).thenReturn(ServerStatus.UP);
-        Mockito.when(serviceManager.getResponsibleServiceCount()).thenReturn(1);
-        Mockito.when(serviceManager.getResponsibleInstanceCount()).thenReturn(1);
-        Mockito.when(raftCore.getNotifyTaskCount()).thenReturn(1);
         Collection<String> clients = new HashSet<>();
         clients.add("1628132208793_127.0.0.1_8080");
         clients.add("127.0.0.1:8081#true");
         clients.add("127.0.0.1:8082#false");
         Mockito.when(clientManager.allClientId()).thenReturn(clients);
-        Mockito.when(clientManager.isResponsibleClient(null)).thenReturn(Boolean.TRUE);
+        Client client = new IpPortBasedClient("127.0.0.1:8081#true", true);
+        client.addServiceInstance(Service.newService("", "", ""), new InstancePublishInfo());
+        Mockito.when(clientManager.getClient("127.0.0.1:8081#true")).thenReturn(client);
+        Mockito.when(clientManager.isResponsibleClient(client)).thenReturn(Boolean.TRUE);
         
         MockHttpServletRequest servletRequest = new MockHttpServletRequest();
         servletRequest.addParameter("onlyStatus", "false");
         ObjectNode objectNode = operatorController.metrics(servletRequest);
         
-        Assert.assertEquals(1, objectNode.get("responsibleServiceCount").asInt());
-        Assert.assertEquals(1, objectNode.get("responsibleInstanceCount").asInt());
-        Assert.assertEquals(ServerStatus.UP.toString(), objectNode.get("status").asText());
-        Assert.assertEquals(3, objectNode.get("clientCount").asInt());
-        Assert.assertEquals(1, objectNode.get("connectionBasedClientCount").asInt());
-        Assert.assertEquals(1, objectNode.get("ephemeralIpPortClientCount").asInt());
-        Assert.assertEquals(1, objectNode.get("persistentIpPortClientCount").asInt());
-        Assert.assertEquals(3, objectNode.get("responsibleClientCount").asInt());
+        assertEquals(1, objectNode.get("responsibleInstanceCount").asInt());
+        assertEquals(ServerStatus.UP.toString(), objectNode.get("status").asText());
+        assertEquals(3, objectNode.get("clientCount").asInt());
+        assertEquals(1, objectNode.get("connectionBasedClientCount").asInt());
+        assertEquals(1, objectNode.get("ephemeralIpPortClientCount").asInt());
+        assertEquals(1, objectNode.get("persistentIpPortClientCount").asInt());
+        assertEquals(1, objectNode.get("responsibleClientCount").asInt());
     }
     
     @Test
-    public void testGetResponsibleServer4Service() {
-        try {
-            Mockito.when(serviceManager.getService(Mockito.anyString(), Mockito.anyString())).thenReturn(new Service());
-            Mockito.when(distroMapper.mapSrv(Mockito.anyString())).thenReturn("test");
-            
-            ObjectNode objectNode = operatorController.getResponsibleServer4Service("test", "test");
-            
-            Assert.assertEquals("test", objectNode.get("responsibleServer").asText());
-        } catch (NacosException e) {
-            e.printStackTrace();
-            Assert.fail(e.getMessage());
-        }
-    }
-    
-    @Test
-    public void testGetResponsibleServer4Client() {
+    void testGetResponsibleServer4Client() {
         Mockito.when(distroMapper.mapSrv(Mockito.anyString())).thenReturn("test");
         ObjectNode objectNode = operatorController.getResponsibleServer4Client("test", "test");
-        Assert.assertEquals("test", objectNode.get("responsibleServer").asText());
+        assertEquals("test", objectNode.get("responsibleServer").asText());
     }
     
     @Test
-    public void testSetLogLevel() {
+    void testSetLogLevel() {
         String res = operatorController.setLogLevel("test", "info");
-        Assert.assertEquals("ok", res);
+        assertEquals("ok", res);
     }
 }

@@ -55,7 +55,8 @@ rem if nacos startup mode is standalone
 if %MODE% == "standalone" (
     echo "nacos is starting with standalone"
 	  set "NACOS_OPTS=-Dnacos.standalone=true"
-    set "NACOS_JVM_OPTS=-Xms512m -Xmx512m -Xmn256m"
+    if "%CUSTOM_NACOS_MEMORY%"=="" ( set "CUSTOM_NACOS_MEMORY=-Xms512m -Xmx512m -Xmn256m" )
+    set "NACOS_JVM_OPTS=%CUSTOM_NACOS_MEMORY%"
 )
 
 rem if nacos startup mode is cluster
@@ -64,8 +65,8 @@ if %MODE% == "cluster" (
 	  if %EMBEDDED_STORAGE% == "embedded" (
 	      set "NACOS_OPTS=-DembeddedStorage=true"
 	  )
-
-    set "NACOS_JVM_OPTS=-server -Xms2g -Xmx2g -Xmn1g -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=320m -XX:-OmitStackTraceInFastThrow -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=%BASE_DIR%\logs\java_heapdump.hprof -XX:-UseLargePages"
+    if "%CUSTOM_NACOS_MEMORY%"=="" ( set "CUSTOM_NACOS_MEMORY=-Xms2g -Xmx2g -Xmn1g -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=320m" )
+    set "NACOS_JVM_OPTS=-server %CUSTOM_NACOS_MEMORY% -XX:-OmitStackTraceInFastThrow -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=%BASE_DIR%\logs\java_heapdump.hprof -XX:-UseLargePages"
 )
 
 rem set nacos's functionMode
@@ -78,7 +79,7 @@ if %FUNCTION_MODE% == "naming" (
 )
 
 rem set nacos options
-set "NACOS_OPTS=%NACOS_OPTS% -Dloader.path=%BASE_DIR%/plugins/health,%BASE_DIR%/plugins/cmdb"
+set "NACOS_OPTS=%NACOS_OPTS% -Dloader.path=%BASE_DIR%/plugins,%BASE_DIR%/plugins/health,%BASE_DIR%/plugins/cmdb,%BASE_DIR%/plugins/selector"
 set "NACOS_OPTS=%NACOS_OPTS% -Dnacos.home=%BASE_DIR%"
 set "NACOS_OPTS=%NACOS_OPTS% -jar %BASE_DIR%\target\%SERVER%.jar"
 

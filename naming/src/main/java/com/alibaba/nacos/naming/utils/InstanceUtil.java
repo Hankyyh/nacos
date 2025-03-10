@@ -18,12 +18,15 @@ package com.alibaba.nacos.naming.utils;
 
 import com.alibaba.nacos.api.naming.pojo.Instance;
 import com.alibaba.nacos.api.naming.utils.NamingUtils;
+import com.alibaba.nacos.common.utils.StringUtils;
 import com.alibaba.nacos.naming.constants.Constants;
 import com.alibaba.nacos.naming.core.v2.metadata.InstanceMetadata;
 import com.alibaba.nacos.naming.core.v2.pojo.InstancePublishInfo;
 import com.alibaba.nacos.naming.core.v2.pojo.Service;
+import com.alibaba.nacos.naming.pojo.instance.InstanceIdGeneratorManager;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,7 +34,7 @@ import java.util.Map;
  *
  * @author xiweng.yy
  */
-public class InstanceUtil {
+public final class InstanceUtil {
     
     /**
      * Parse {@code InstancePublishInfo} to {@code Instance}.
@@ -48,14 +51,18 @@ public class InstanceUtil {
         result.setClusterName(instanceInfo.getCluster());
         Map<String, String> instanceMetadata = new HashMap<>(instanceInfo.getExtendDatum().size());
         for (Map.Entry<String, Object> entry : instanceInfo.getExtendDatum().entrySet()) {
-            if (Constants.CUSTOM_INSTANCE_ID.equals(entry.getKey())) {
-                result.setInstanceId(entry.getValue().toString());
-            } else if (Constants.PUBLISH_INSTANCE_ENABLE.equals(entry.getKey())) {
-                result.setEnabled((boolean) entry.getValue());
-            } else if (Constants.PUBLISH_INSTANCE_WEIGHT.equals(entry.getKey())) {
-                result.setWeight((Double) entry.getValue());
-            } else {
-                instanceMetadata.put(entry.getKey(), null != entry.getValue() ? entry.getValue().toString() : null);
+            switch (entry.getKey()) {
+                case Constants.CUSTOM_INSTANCE_ID:
+                    result.setInstanceId(entry.getValue().toString());
+                    break;
+                case Constants.PUBLISH_INSTANCE_ENABLE:
+                    result.setEnabled((boolean) entry.getValue());
+                    break;
+                case Constants.PUBLISH_INSTANCE_WEIGHT:
+                    result.setWeight((Double) entry.getValue());
+                    break;
+                default:
+                    instanceMetadata.put(entry.getKey(), null != entry.getValue() ? entry.getValue().toString() : null);
             }
         }
         result.setMetadata(instanceMetadata);
@@ -80,7 +87,7 @@ public class InstanceUtil {
 
     /**
      * Deepcopy one instance.
-     * 
+     *
      * @param source instance to be deepcopy
      */
     public static Instance deepCopy(Instance source) {
@@ -96,5 +103,34 @@ public class InstanceUtil {
         target.setServiceName(source.getServiceName());
         target.setMetadata(new HashMap<>(source.getMetadata()));
         return target;
+    }
+    
+    /**
+     * If the instance id is empty, use the default-instance-id-generator method to set the instance id.
+     *
+     * @param instance    instance from request
+     * @param groupedServiceName groupedServiceName from service
+     */
+    public static void setInstanceIdIfEmpty(Instance instance, String groupedServiceName) {
+        if (null != instance && StringUtils.isEmpty(instance.getInstanceId())) {
+            if (StringUtils.isBlank(instance.getServiceName())) {
+                instance.setServiceName(groupedServiceName);
+            }
+            instance.setInstanceId(InstanceIdGeneratorManager.generateInstanceId(instance));
+        }
+    }
+    
+    /**
+     * Batch set instance id if empty.
+     *
+     * @param instances   instances from request
+     * @param groupedServiceName groupedServiceName from service
+     */
+    public static void batchSetInstanceIdIfEmpty(List<Instance> instances, String groupedServiceName) {
+        if (null != instances) {
+            for (Instance instance : instances) {
+                setInstanceIdIfEmpty(instance, groupedServiceName);
+            }
+        }
     }
 }

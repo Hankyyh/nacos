@@ -49,6 +49,7 @@ const LANGUAGE_LIST = [
   { value: 'yaml', label: 'YAML' },
   { value: 'html', label: 'HTML' },
   { value: 'properties', label: 'Properties' },
+  { value: 'toml', label: 'TOML' },
 ];
 
 const TAB_LIST = ['production', 'beta'];
@@ -70,6 +71,7 @@ class ConfigEditor extends React.Component {
       isNewConfig: true,
       betaPublishSuccess: false,
       betaIps: '',
+      casMd5: '',
       tabActiveKey: '',
       form: {
         dataId: '', // 配置 ID
@@ -92,6 +94,7 @@ class ConfigEditor extends React.Component {
   componentDidMount() {
     const isNewConfig = !getParams('dataId');
     const group = getParams('group').trim();
+    this.tenant = getParams('namespace') || '';
     this.setState({ isNewConfig }, () => {
       if (!isNewConfig) {
         this.changeForm(
@@ -136,8 +139,8 @@ class ConfigEditor extends React.Component {
       roundedSelection: false,
       readOnly: false,
       lineNumbersMinChars: true,
-      theme: 'vs-dark',
-      folding: false,
+      theme: 'vs-dark-enhanced',
+      folding: true,
       showFoldingControls: 'always',
       cursorStyle: 'line',
       automaticLayout: true,
@@ -230,7 +233,7 @@ class ConfigEditor extends React.Component {
     if (validateContent.validate({ content, type })) {
       return this._publishConfig();
     } else {
-      return new Promise((resolve) => {
+      return new Promise(resolve => {
         Dialog.confirm({
           content: locale.codeValErrorPrompt,
           onOk: () => resolve(this._publishConfig()),
@@ -241,12 +244,15 @@ class ConfigEditor extends React.Component {
   }
 
   _publishConfig(beta = false) {
-    const { betaIps, isNewConfig } = this.state;
+    const { betaIps, isNewConfig, isBeta } = this.state;
     const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
     if (beta) {
       headers.betaIps = betaIps;
     }
-    const form = { ...this.state.form, content: this.getCodeVal() };
+    if (!isBeta) {
+      headers.casMd5 = this.state.casMd5;
+    }
+    const form = { ...this.state.form, content: this.getCodeVal(), betaIps };
     const payload = {};
     Object.keys(form).forEach(key => {
       payload[key] = form[key];
@@ -255,6 +261,8 @@ class ConfigEditor extends React.Component {
     if (configTags.length > 0) {
       payload.config_tags = configTags.join(',');
     }
+    // #12046 console-ui should not offer encryptedDataKey field to API
+    payload.encryptedDataKey = '';
     const stringify = require('qs/lib/stringify');
     this.setState({ loading: true });
     return request({
@@ -262,16 +270,34 @@ class ConfigEditor extends React.Component {
       method: 'post',
       data: stringify(payload),
       headers,
-    }).then(res => {
-      if (res) {
-        if (isNewConfig) {
-          this.setState({ isNewConfig: false });
+    }).then(
+      res => {
+        if (res) {
+          if (isNewConfig) {
+            this.setState({ isNewConfig: false });
+          }
+          this.getConfig(beta);
         }
-        this.getConfig(beta);
+        this.setState({ loading: false });
+        return res;
+      },
+      error => {
+        this.setState({ loading: false });
+        if (error.status && error.status === 403) {
+          Dialog.alert({
+            content: this.props.locale.publishFailed403,
+          });
+        } else if (
+          error.status &&
+          error.status === 500 &&
+          error.data.includes('Cas publish fail')
+        ) {
+          Dialog.alert({
+            content: this.props.locale.publishCasFailed,
+          });
+        }
       }
-      this.setState({ loading: false });
-      return res;
-    });
+    );
   }
 
   publishBeta() {
@@ -377,13 +403,14 @@ class ConfigEditor extends React.Component {
     return request.get('v1/cs/configs', { params }).then(res => {
       const form = beta ? res.data : res;
       if (!form) return false;
-      const { type, content, configTags, betaIps } = form;
+      const { type, content, configTags, betaIps, md5 } = form;
       this.setState({ betaIps });
       this.changeForm({ ...form, config_tags: configTags ? configTags.split(',') : [] });
       this.initMoacoEditor(type, content);
       this.codeVal = content;
       this.setState({
         tagDataSource: this.state.form.config_tags,
+        casMd5: md5,
       });
       return res;
     });
@@ -483,7 +510,10 @@ class ConfigEditor extends React.Component {
             </Tab>
           )}
           <Form className="new-config-form" {...formItemLayout}>
-            <Form.Item label="Data ID:" required {...dataIdError}>
+            <Form.Item label={locale.namespace} required>
+              <p>{this.tenant}</p>
+            </Form.Item>
+            <Form.Item label="Data ID" required {...dataIdError}>
               <Input
                 value={form.dataId}
                 onChange={dataId =>
@@ -492,7 +522,7 @@ class ConfigEditor extends React.Component {
                 disabled={!isNewConfig}
               />
             </Form.Item>
-            <Form.Item label="Group:" required {...groupError}>
+            <Form.Item label="Group" required {...groupError}>
               <Input
                 value={form.group}
                 onChange={group =>

@@ -36,20 +36,14 @@ public final class HttpClientBeanHolder {
     
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpClientBeanHolder.class);
     
-    private static final Map<String, NacosRestTemplate> SINGLETON_REST = new HashMap<String, NacosRestTemplate>(10);
+    private static final Map<String, NacosRestTemplate> SINGLETON_REST = new HashMap<>(10);
     
-    private static final Map<String, NacosAsyncRestTemplate> SINGLETON_ASYNC_REST = new HashMap<String, NacosAsyncRestTemplate>(
-            10);
+    private static final Map<String, NacosAsyncRestTemplate> SINGLETON_ASYNC_REST = new HashMap<>(10);
     
     private static final AtomicBoolean ALREADY_SHUTDOWN = new AtomicBoolean(false);
     
     static {
-        ThreadUtils.addShutdownHook(new Runnable() {
-            @Override
-            public void run() {
-                shutdown();
-            }
-        });
+        ThreadUtils.addShutdownHook(HttpClientBeanHolder::shutdown);
     }
     
     public static NacosRestTemplate getNacosRestTemplate(Logger logger) {
@@ -105,13 +99,16 @@ public final class HttpClientBeanHolder {
         if (!ALREADY_SHUTDOWN.compareAndSet(false, true)) {
             return;
         }
-        LOGGER.warn("[HttpClientBeanHolder] Start destroying common HttpClient");
+        LOGGER.info("[HttpClientBeanHolder] Start destroying common HttpClient");
+        
         try {
             shutdown(DefaultHttpClientFactory.class.getName());
         } catch (Exception ex) {
-            LOGGER.error("An exception occurred when the common HTTP client was closed : {}", ExceptionUtil.getStackTrace(ex));
+            LOGGER.error("An exception occurred when the common HTTP client was closed : {}",
+                    ExceptionUtil.getStackTrace(ex));
         }
-        LOGGER.warn("[HttpClientBeanHolder] Destruction of the end");
+        
+        LOGGER.info("[HttpClientBeanHolder] Completed destruction of HttpClient");
     }
     
     /**
@@ -121,7 +118,7 @@ public final class HttpClientBeanHolder {
      * @throws Exception ex
      */
     public static void shutdown(String className) throws Exception {
-        shutdownNacostSyncRest(className);
+        shutdownNacosSyncRest(className);
         shutdownNacosAsyncRest(className);
     }
     
@@ -131,7 +128,7 @@ public final class HttpClientBeanHolder {
      * @param className HttpClientFactory implement class name
      * @throws Exception ex
      */
-    public static void shutdownNacostSyncRest(String className) throws Exception {
+    public static void shutdownNacosSyncRest(String className) throws Exception {
         final NacosRestTemplate nacosRestTemplate = SINGLETON_REST.get(className);
         if (nacosRestTemplate != null) {
             nacosRestTemplate.close();

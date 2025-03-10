@@ -59,13 +59,18 @@ public enum ConfigType {
     YAML("yaml"),
     
     /**
+     * config type is "toml".
+     */
+    TOML("toml"),
+    
+    /**
      * not a real type.
      */
     UNSET("unset");
     
     private final String type;
     
-    private static final Map<String, ConfigType> LOCAL_MAP = new HashMap<String, ConfigType>();
+    private static final Map<String, ConfigType> LOCAL_MAP = new HashMap<>();
     
     static {
         for (ConfigType configType : values()) {

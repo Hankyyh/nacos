@@ -28,22 +28,24 @@ import com.alibaba.nacos.naming.core.v2.metadata.NamingMetadataOperateService;
 import com.alibaba.nacos.naming.core.v2.metadata.ServiceMetadata;
 import com.alibaba.nacos.naming.core.v2.pojo.Service;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.util.ReflectionUtils;
 
+import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * {@link ServiceOperatorV2Impl} unit tests.
@@ -51,8 +53,8 @@ import java.util.Optional;
  * @author chenglu
  * @date 2021-08-04 00:06
  */
-@RunWith(MockitoJUnitRunner.class)
-public class ServiceOperatorV2ImplTest {
+@ExtendWith(MockitoExtension.class)
+class ServiceOperatorV2ImplTest {
     
     @InjectMocks
     private ServiceOperatorV2Impl serviceOperatorV2;
@@ -66,45 +68,54 @@ public class ServiceOperatorV2ImplTest {
     @Mock
     private ServiceStorage serviceStorage;
     
-    @Before
-    public void setUp() {
+    @BeforeEach
+    void setUp() throws IllegalAccessException {
+        cleanNamespace();
         Service service = Service.newService("A", "B", "C");
         ServiceManager.getInstance().getSingleton(service);
     }
     
-    @After
-    public void tearDown() {
+    @AfterEach
+    void tearDown() throws IllegalAccessException {
         Service service = Service.newService("A", "B", "C");
         ServiceManager.getInstance().removeSingleton(service);
+        cleanNamespace();
+    }
+    
+    private void cleanNamespace() throws IllegalAccessException {
+        Field field = ReflectionUtils.findField(ServiceManager.class, "namespaceSingletonMaps");
+        field.setAccessible(true);
+        Map map = (Map) field.get(ServiceManager.getInstance());
+        map.clear();
     }
     
     @Test
-    public void testCreate() throws NacosException {
+    void testCreate() throws NacosException {
         serviceOperatorV2.create("A", "B", new ServiceMetadata());
-    
+        
         Mockito.verify(metadataOperateService).updateServiceMetadata(Mockito.any(), Mockito.any());
     }
     
     @Test
-    public void testUpdate() throws NacosException {
+    void testUpdate() throws NacosException {
         serviceOperatorV2.update(Service.newService("A", "B", "C"), new ServiceMetadata());
         
         Mockito.verify(metadataOperateService).updateServiceMetadata(Mockito.any(), Mockito.any());
     }
     
     @Test
-    public void testDelete() throws NacosException {
+    void testDelete() throws NacosException {
         ServiceInfo serviceInfo = new ServiceInfo();
         serviceInfo.setHosts(Collections.emptyList());
         Mockito.when(serviceStorage.getPushData(Mockito.any())).thenReturn(serviceInfo);
         
-        serviceOperatorV2.delete("A", "C");
+        serviceOperatorV2.delete("A", "B@@C");
         
         Mockito.verify(metadataOperateService).deleteServiceMetadata(Mockito.any());
     }
     
     @Test
-    public void testQueryService() throws NacosException {
+    void testQueryService() throws NacosException {
         ClusterMetadata clusterMetadata = new ClusterMetadata();
         Map<String, ClusterMetadata> clusterMetadataMap = new HashMap<>(2);
         clusterMetadataMap.put("D", clusterMetadata);
@@ -114,27 +125,27 @@ public class ServiceOperatorV2ImplTest {
         
         Mockito.when(serviceStorage.getClusters(Mockito.any())).thenReturn(Collections.singleton("D"));
         
-        ObjectNode objectNode = serviceOperatorV2.queryService("A", "C");
-    
-        Assert.assertEquals("A", objectNode.get(FieldsConstants.NAME_SPACE_ID).asText());
-        Assert.assertEquals("C", objectNode.get(FieldsConstants.NAME).asText());
-        Assert.assertEquals(1, objectNode.get(FieldsConstants.CLUSTERS).size());
+        ObjectNode objectNode = serviceOperatorV2.queryService("A", "B@@C");
+        
+        assertEquals("A", objectNode.get(FieldsConstants.NAME_SPACE_ID).asText());
+        assertEquals("C", objectNode.get(FieldsConstants.NAME).asText());
+        assertEquals(1, objectNode.get(FieldsConstants.CLUSTERS).size());
     }
     
     @Test
-    public void testListService() throws NacosException {
-        List<String> res = serviceOperatorV2.listService("A", "B", null, 10, 1);
-        Assert.assertEquals(1, res.size());
+    void testListService() throws NacosException {
+        Collection<String> res = serviceOperatorV2.listService("A", "B", null);
+        assertEquals(1, res.size());
     }
     
     @Test
-    public void testListAllNamespace() {
-        Assert.assertEquals(1, serviceOperatorV2.listAllNamespace().size());
+    void testListAllNamespace() {
+        assertEquals(1, serviceOperatorV2.listAllNamespace().size());
     }
     
     @Test
-    public void testSearchServiceName() throws NacosException {
-        Collection<String> res = serviceOperatorV2.searchServiceName("A", "", true);
-        Assert.assertEquals(1, res.size());
+    void testSearchServiceName() throws NacosException {
+        Collection<String> res = serviceOperatorV2.searchServiceName("A", "");
+        assertEquals(1, res.size());
     }
 }

@@ -69,7 +69,7 @@ public class NamingMetadataManager extends SmartSubscriber {
     }
     
     /**
-     * Whether instance metadata metadata for instance of {@link Service}.
+     * Whether instance metadata for instance of {@link Service}.
      *
      * @param service    service
      * @param metadataId instance metadata id
@@ -82,7 +82,7 @@ public class NamingMetadataManager extends SmartSubscriber {
     /**
      * Get service metadata for {@link Service}, which is the original metadata object.
      *
-     * <p>This method should use only query, can't modified metadata.
+     * <p>This method should use only query, can't modify metadata.
      *
      * @param service service
      * @return service metadata
@@ -94,7 +94,7 @@ public class NamingMetadataManager extends SmartSubscriber {
     /**
      * Get instance metadata for instance of {@link Service}, which is the original metadata object.
      *
-     * <p>This method should use only query, can't modified metadata.
+     * <p>This method should use only query, can't modify metadata.
      *
      * @param service    service
      * @param metadataId instance metadata id
@@ -127,10 +127,7 @@ public class NamingMetadataManager extends SmartSubscriber {
      * @param instanceMetadata new instance metadata
      */
     public void updateInstanceMetadata(Service service, String metadataId, InstanceMetadata instanceMetadata) {
-        if (!instanceMetadataMap.containsKey(service)) {
-            instanceMetadataMap.putIfAbsent(service, new ConcurrentHashMap<>(INITIAL_CAPACITY));
-        }
-        instanceMetadataMap.get(service).put(metadataId, instanceMetadata);
+        instanceMetadataMap.computeIfAbsent(service, k -> new ConcurrentHashMap<>(INITIAL_CAPACITY)).put(metadataId, instanceMetadata);
     }
     
     /**
@@ -151,9 +148,11 @@ public class NamingMetadataManager extends SmartSubscriber {
      */
     public void removeInstanceMetadata(Service service, String metadataId) {
         ConcurrentMap<String, InstanceMetadata> instanceMetadataMapForService = instanceMetadataMap.get(service);
-        instanceMetadataMapForService.remove(metadataId);
-        if (instanceMetadataMapForService.isEmpty()) {
-            serviceMetadataMap.remove(service);
+        if (null != instanceMetadataMapForService) {
+            instanceMetadataMapForService.remove(metadataId);
+            if (instanceMetadataMapForService.isEmpty()) {
+                instanceMetadataMap.remove(service);
+            }
         }
         expiredMetadataInfos.remove(ExpiredMetadataInfo.newExpiredInstanceMetadata(service, metadataId));
     }
@@ -190,7 +189,8 @@ public class NamingMetadataManager extends SmartSubscriber {
      */
     public void loadServiceMetadataSnapshot(ConcurrentMap<Service, ServiceMetadata> snapshot) {
         for (Service each : snapshot.keySet()) {
-            ServiceManager.getInstance().getSingleton(each);
+            Service  service = Service.newService(each.getNamespace(), each.getGroup(), each.getName(), each.isEphemeral());
+            ServiceManager.getInstance().getSingleton(service);
         }
         ConcurrentMap<Service, ServiceMetadata> oldSnapshot = serviceMetadataMap;
         serviceMetadataMap = snapshot;

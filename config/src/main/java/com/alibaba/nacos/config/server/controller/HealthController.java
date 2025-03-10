@@ -17,11 +17,13 @@
 package com.alibaba.nacos.config.server.controller;
 
 import com.alibaba.nacos.config.server.constant.Constants;
-import com.alibaba.nacos.config.server.service.datasource.DataSourceService;
-import com.alibaba.nacos.config.server.service.datasource.DynamicDataSource;
+import com.alibaba.nacos.config.server.paramcheck.ConfigDefaultHttpParamExtractor;
+import com.alibaba.nacos.core.cluster.MemberLookup;
+import com.alibaba.nacos.core.paramcheck.ExtractorManager;
+import com.alibaba.nacos.persistence.datasource.DataSourceService;
+import com.alibaba.nacos.persistence.datasource.DynamicDataSource;
 import com.alibaba.nacos.core.cluster.ServerMemberManager;
 import com.alibaba.nacos.sys.utils.InetUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,6 +38,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping(Constants.HEALTH_CONTROLLER_PATH)
+@ExtractorManager.Extractor(httpExtractor = ConfigDefaultHttpParamExtractor.class)
 public class HealthController {
     
     private DataSourceService dataSourceService;
@@ -46,8 +49,11 @@ public class HealthController {
     
     private static final String HEALTH_WARN = "WARN";
     
-    @Autowired
-    private ServerMemberManager memberManager;
+    private final ServerMemberManager memberManager;
+    
+    public HealthController(ServerMemberManager memberManager) {
+        this.memberManager = memberManager;
+    }
     
     @PostConstruct
     public void init() {
@@ -84,9 +90,27 @@ public class HealthController {
     }
     
     private boolean isAddressServerHealthy() {
-        Map<String, Object> info = memberManager.getLookup().info();
-        return info != null && info.get("addressServerHealth") != null && Boolean
-                .parseBoolean(info.get("addressServerHealth").toString());
+        final MemberLookup lookup = memberManager.getLookup();
+        if (lookup == null) {
+            return false;
+        }
+        
+        final boolean useAddressServer = lookup.useAddressServer();
+        if (!useAddressServer) {
+            return true;
+        }
+        
+        final Map<String, Object> info = lookup.info();
+        if (info == null) {
+            return false;
+        }
+    
+        final Object addressServerHealth = info.get("addressServerHealth");
+        if (addressServerHealth == null) {
+            return false;
+        }
+    
+        return Boolean.parseBoolean(addressServerHealth.toString());
     }
     
 }

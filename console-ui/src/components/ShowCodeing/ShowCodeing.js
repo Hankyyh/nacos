@@ -42,6 +42,7 @@ class ShowCodeing extends React.Component {
     this.cppCode = 'TODO';
     this.shellCode = 'TODO';
     this.pythonCode = 'TODO';
+    this.csharpCode = 'TODO';
     this.record = {};
     this.sprigboot_code = `// Refer to document: https://github.com/nacos-group/nacos-examples/tree/master/nacos-spring-boot-example/nacos-spring-boot-config-example
 package com.alibaba.nacos.example.spring.boot.controller;
@@ -121,6 +122,7 @@ public class ConfigController {
     this.cppCode = this.getCppCode(obj);
     this.shellCode = this.getShellCode(obj);
     this.pythonCode = this.getPythonCode(obj);
+    this.csharpCode = this.getCSharpCode(obj);
     this.forceUpdate();
   }
 
@@ -163,7 +165,7 @@ public class ConfigExample {
 		configService.addListener(dataId, group, new Listener() {
 			@Override
 			public void receiveConfigInfo(String configInfo) {
-				System.out.println("recieve:" + configInfo);
+				System.out.println("receive:" + configInfo);
 			}
 
 			@Override
@@ -205,7 +207,232 @@ public class ConfigExample {
   }
 
   getPythonCode(data) {
-    return 'TODO';
+    return `/*
+* Demo for Nacos
+*/
+import json
+import socket
+
+import nacos
+
+
+def get_host_ip():
+    res = socket.gethostbyname(socket.gethostname())
+    return res
+
+
+def load_config(content):
+    _config = json.loads(content)
+    return _config
+
+
+def nacos_config_callback(args):
+    content = args['raw_content']
+    load_config(content)
+
+
+class NacosClient:
+    service_name = None
+    service_port = None
+    service_group = None
+
+    def __init__(self, server_endpoint, namespace_id, username=None, password=None):
+        self.client = nacos.NacosClient(server_endpoint,
+                                        namespace=namespace_id,
+                                        username=username,
+                                        password=password)
+        self.endpoint = server_endpoint
+        self.service_ip = get_host_ip()
+
+    def register(self):
+        self.client.add_naming_instance(self.service_name,
+                                        self.service_ip,
+                                        self.service_port,
+                                        group_name=self.service_group)
+
+    def modify(self, service_name, service_ip=None, service_port=None):
+        self.client.modify_naming_instance(service_name,
+                                           service_ip if service_ip else self.service_ip,
+                                           service_port if service_port else self.service_port)
+
+    def unregister(self):
+        self.client.remove_naming_instance(self.service_name,
+                                           self.service_ip,
+                                           self.service_port)
+
+    def set_service(self, service_name, service_ip, service_port, service_group):
+        self.service_name = service_name
+        self.service_ip = service_ip
+        self.service_port = service_port
+        self.service_group = service_group
+
+    async def beat_callback(self):
+        self.client.send_heartbeat(self.service_name,
+                                   self.service_ip,
+                                   self.service_port)
+
+    def load_conf(self, data_id, group):
+        return self.client.get_config(data_id=data_id, group=group, no_snapshot=True)
+
+    def add_conf_watcher(self, data_id, group, callback):
+        self.client.add_config_watcher(data_id=data_id, group=group, cb=callback)
+
+
+if __name__ == '__main__':
+    nacos_config = {
+        "nacos_data_id":"test",
+        "nacos_server_ip":"127.0.0.1",
+        "nacos_namespace":"public",
+        "nacos_groupName":"DEFAULT_GROUP",
+        "nacos_user":"nacos",
+        "nacos_password":"1234567"
+    }
+    nacos_data_id = nacos_config["nacos_data_id"]
+    SERVER_ADDRESSES = nacos_config["nacos_server_ip"]
+    NAMESPACE = nacos_config["nacos_namespace"]
+    groupName = nacos_config["nacos_groupName"]
+    user = nacos_config["nacos_user"]
+    password = nacos_config["nacos_password"]
+    # todo 将另一个路由对象（通常定义在其他模块或文件中）合并到主应用（app）中。
+    # app.include_router(custom_api.router, tags=['test'])
+    service_ip = get_host_ip()
+    client = NacosClient(SERVER_ADDRESSES, NAMESPACE, user, password)
+    client.add_conf_watcher(nacos_data_id, groupName, nacos_config_callback)
+
+    # 启动时，强制同步一次配置
+    data_stream = client.load_conf(nacos_data_id, groupName)
+    json_config = load_config(data_stream)
+`;
+  }
+
+  getCSharpCode(data) {
+    return `/*
+Demo for Basic Nacos Opreation
+App.csproj
+
+<ItemGroup>
+  <PackageReference Include="nacos-sdk-csharp" Version="\${latest.version}" />
+</ItemGroup>
+*/
+
+using Microsoft.Extensions.DependencyInjection;
+using Nacos.V2;
+using Nacos.V2.DependencyInjection;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task Main(string[] args)
+    {
+        string serverAddr = "http://localhost:8848";
+        string dataId = "${data.dataId}";
+        string group = "${data.group}";
+
+        IServiceCollection services = new ServiceCollection();
+
+        services.AddNacosV2Config(x =>
+        {
+            x.ServerAddresses = new List<string> { serverAddr };
+            x.Namespace = "cs-test";
+
+            // swich to use http or rpc
+            x.ConfigUseRpc = true;
+        });
+
+        IServiceProvider serviceProvider = services.BuildServiceProvider();
+        var configSvc = serviceProvider.GetService<INacosConfigService>();
+
+        var content = await configSvc.GetConfig(dataId, group, 3000);
+        Console.WriteLine(content);
+
+        var listener = new ConfigListener();
+
+        await configSvc.AddListener(dataId, group, listener);
+
+        var isPublishOk = await configSvc.PublishConfig(dataId, group, "content");
+        Console.WriteLine(isPublishOk);
+
+        await Task.Delay(3000);
+        content = await configSvc.GetConfig(dataId, group, 5000);
+        Console.WriteLine(content);
+
+        var isRemoveOk = await configSvc.RemoveConfig(dataId, group);
+        Console.WriteLine(isRemoveOk);
+        await Task.Delay(3000);
+
+        content = await configSvc.GetConfig(dataId, group, 5000);
+        Console.WriteLine(content);
+        await Task.Delay(300000);
+    }
+
+    internal class ConfigListener : IListener
+    {
+        public void ReceiveConfigInfo(string configInfo)
+        {
+            Console.WriteLine("receive:" + configInfo);
+        }
+    }
+}
+
+/*
+Refer to document:  https://github.com/nacos-group/nacos-sdk-csharp/tree/dev/samples/MsConfigApp
+Demo for ASP.NET Core Integration
+MsConfigApp.csproj
+
+<ItemGroup>
+  <PackageReference Include="nacos-sdk-csharp.Extensions.Configuration" Version="\${latest.version}" />
+</ItemGroup>
+*/
+
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Serilog;
+using Serilog.Events;
+
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        Log.Logger = new LoggerConfiguration()
+            .Enrich.FromLogContext()
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
+            .MinimumLevel.Debug()
+            .WriteTo.Console()
+            .CreateLogger();
+
+        try
+        {
+            Log.ForContext<Program>().Information("Application starting...");
+            CreateHostBuilder(args, Log.Logger).Build().Run();
+        }
+        catch (System.Exception ex)
+        {
+            Log.ForContext<Program>().Fatal(ex, "Application start-up failed!!");
+        }
+        finally
+        {
+            Log.CloseAndFlush();
+        }
+    }
+
+    public static IHostBuilder CreateHostBuilder(string[] args, Serilog.ILogger logger) =>
+        Host.CreateDefaultBuilder(args)
+            .ConfigureAppConfiguration((context, builder) =>
+            {
+                var c = builder.Build();
+                builder.AddNacosV2Configuration(c.GetSection("NacosConfig"), logAction: x => x.AddSerilog(logger));
+            })
+            .ConfigureWebHostDefaults(webBuilder =>
+            {
+                webBuilder.UseStartup<Startup>().UseUrls("http://*:8787");
+            })
+            .UseSerilog();
+}
+  `;
   }
 
   openDialog(record) {
@@ -316,6 +543,12 @@ public class ConfigExample {
                   title={'Python'}
                   key={6}
                   onClick={this.changeTab.bind(this, 'commoneditor6', this.pythonCode)}
+                />
+
+                <TabPane
+                  title={'C#'}
+                  key={7}
+                  onClick={this.changeTab.bind(this, 'commoneditor7', this.csharpCode)}
                 />
                 {}
               </Tab>

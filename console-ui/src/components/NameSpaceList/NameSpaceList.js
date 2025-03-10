@@ -16,10 +16,11 @@
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import { ConfigProvider, Dialog } from '@alifd/next';
+import { ConfigProvider, Dialog, Select } from '@alifd/next';
 import { getParams, setParams, request } from '../../globalLib';
 
 import './index.scss';
+import { NAME_SHOW } from '../../constants';
 
 /**
  * 命名空间列表
@@ -42,6 +43,7 @@ class NameSpaceList extends React.Component {
     this.state = {
       nownamespace: window.nownamespace || this._namespace || '',
       namespaceList: window.namespaceList || [],
+      nameShow: localStorage.getItem(NAME_SHOW),
       // namespaceShowName: window.namespaceShowName || this._namespaceShowName || '',
       // _dingdingLink: "",
       // _forumLink: ""
@@ -85,7 +87,7 @@ class NameSpaceList extends React.Component {
   /**
    切换namespace
    * */
-  changeNameSpace(ns, nsName) {
+  changeNameSpace(ns, nsName, nsDesc) {
     localStorage.setItem('namespace', ns);
     this.setnamespace(ns || '');
     setParams({
@@ -94,9 +96,15 @@ class NameSpaceList extends React.Component {
     });
     window.nownamespace = ns;
     window.namespaceShowName = nsName;
+    window.namespaceDesc = nsDesc;
 
     this.calleeParent(true);
-    this.props.setNowNameSpace && this.props.setNowNameSpace(nsName, ns);
+    this.props.setNowNameSpace && this.props.setNowNameSpace(nsName, ns, nsDesc);
+  }
+
+  changeName(...value) {
+    let space = value[2];
+    this.changeNameSpace(space.namespace, space.namespaceShowName, space.namespaceDesc);
   }
 
   calleeParent(needclean = false) {
@@ -136,17 +144,21 @@ class NameSpaceList extends React.Component {
     window.namespaceList = data;
     window.nownamespace = nownamespace;
     let namespaceShowName = '';
+    let namespaceDesc = '';
     for (let i = 0; i < data.length; i++) {
       if (data[i].namespace === nownamespace) {
         ({ namespaceShowName } = data[i]);
+        ({ namespaceDesc } = data[i]);
         break;
       }
     }
     window.namespaceShowName = namespaceShowName;
+    window.namespaceDesc = namespaceDesc;
     setParams('namespace', nownamespace || '');
     localStorage.setItem('namespace', nownamespace);
     // setParams('namespaceShowName', namespaceShowName);
-    this.props.setNowNameSpace && this.props.setNowNameSpace(namespaceShowName, nownamespace);
+    this.props.setNowNameSpace &&
+      this.props.setNowNameSpace(namespaceShowName, nownamespace, namespaceDesc);
     this.setState({
       nownamespace,
       namespaceList: data,
@@ -161,19 +173,41 @@ class NameSpaceList extends React.Component {
   }
 
   rendernamespace(namespaceList) {
-    const { nownamespace } = this.state; // 获得当前namespace
-    const namespacesBtn = namespaceList.map((obj, index) => {
-      const style =
-        obj.namespace === nownamespace
-          ? { color: '#00C1DE', paddingRight: 10, border: 'none', fontSize: 12 }
-          : { color: '#666', paddingRight: 10, border: 'none', fontSize: 12 };
+    const { nownamespace, nameShow } = this.state; // 获得当前namespace
+    if (nameShow && nameShow === 'select') {
+      let de = {
+        value: nownamespace,
+      };
+      namespaceList.forEach(obj => {
+        obj.label = obj.namespaceShowName + ' ' + (obj.namespaceDesc ? obj.namespaceDesc : '');
+        obj.value = obj.namespace;
+        if (obj.value !== undefined && obj.value === de.value) {
+          de = obj;
+        }
+      });
       return (
-        <div key={index} style={{ float: 'left', cursor: 'pointer' }}>
-          {index === 0 ? '' : <span style={{ marginRight: 5, marginLeft: 5 }}>|</span>}
+        <Select
+          style={{ width: 200 }}
+          size="medium"
+          dataSource={namespaceList}
+          value={de}
+          onChange={this.changeName.bind(this)}
+          showSearch
+        />
+      );
+    }
+    const namespacesBtn = namespaceList.map((obj, index) => {
+      return (
+        <div key={index} style={{ cursor: 'pointer' }}>
+          {index === 0 ? '' : <span style={{ marginRight: 8, color: '#999' }}>|</span>}
           <span
-            type={'light'}
-            style={style}
-            onClick={this.changeNameSpace.bind(this, obj.namespace, obj.namespaceShowName)}
+            className={obj.namespace === nownamespace ? 'naming-focus' : 'naming-simple'}
+            onClick={this.changeNameSpace.bind(
+              this,
+              obj.namespace,
+              obj.namespaceShowName,
+              obj.namespaceDesc
+            )}
             key={index}
           >
             {obj.namespaceShowName}
@@ -181,23 +215,23 @@ class NameSpaceList extends React.Component {
         </div>
       );
     });
-    return <div style={{ paddingTop: 9 }}>{namespacesBtn}</div>;
+    return namespacesBtn;
   }
 
   render() {
     const namespaceList = this.state.namespaceList || [];
     const title = this.props.title || '';
-    const namespacestyle = {
-      marginTop: 5,
-      marginBottom: '10px',
-      paddingBottom: '10px',
-      borderBottom: '1px solid #ccc',
-    };
 
     return (
       <div
         className={namespaceList.length ? 'namespacewrapper' : ''}
-        style={namespaceList.length ? namespacestyle : {}}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          marginTop: 8,
+          marginBottom: 16,
+        }}
       >
         {}
         {title ? (
@@ -218,7 +252,7 @@ class NameSpaceList extends React.Component {
         ) : (
           ''
         )}
-        <div style={{ float: 'left' }}>{this.rendernamespace(namespaceList)}</div>
+        {this.rendernamespace(namespaceList)}
       </div>
     );
   }

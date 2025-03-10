@@ -20,6 +20,7 @@ import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.common.Constants;
 import com.alibaba.nacos.api.config.ConfigService;
 import com.alibaba.nacos.api.config.ConfigType;
+import com.alibaba.nacos.api.config.filter.IConfigFilter;
 import com.alibaba.nacos.api.config.listener.Listener;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.client.config.filter.impl.ConfigFilterChainManager;
@@ -27,18 +28,19 @@ import com.alibaba.nacos.client.config.filter.impl.ConfigRequest;
 import com.alibaba.nacos.client.config.filter.impl.ConfigResponse;
 import com.alibaba.nacos.client.config.http.ServerHttpAgent;
 import com.alibaba.nacos.client.config.impl.ClientWorker;
+import com.alibaba.nacos.client.config.impl.ConfigServerListManager;
 import com.alibaba.nacos.client.config.impl.LocalConfigInfoProcessor;
 import com.alibaba.nacos.client.config.impl.LocalEncryptedDataKeyProcessor;
-import com.alibaba.nacos.client.config.impl.ServerListManager;
-import com.alibaba.nacos.client.config.utils.ContentUtils;
 import com.alibaba.nacos.client.config.utils.ParamUtils;
+import com.alibaba.nacos.client.env.NacosClientProperties;
 import com.alibaba.nacos.client.utils.LogUtils;
 import com.alibaba.nacos.client.utils.ParamUtil;
+import com.alibaba.nacos.client.utils.PreInitUtils;
 import com.alibaba.nacos.client.utils.ValidatorUtils;
 import com.alibaba.nacos.common.utils.StringUtils;
 import org.slf4j.Logger;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.Properties;
 
 /**
@@ -71,22 +73,25 @@ public class NacosConfigService implements ConfigService {
     private final ConfigFilterChainManager configFilterChainManager;
     
     public NacosConfigService(Properties properties) throws NacosException {
-        ValidatorUtils.checkInitParam(properties);
+        PreInitUtils.asyncPreLoadCostComponent();
+        final NacosClientProperties clientProperties = NacosClientProperties.PROTOTYPE.derive(properties);
+        LOGGER.info(ParamUtil.getInputParameters(clientProperties.asProperties()));
+        ValidatorUtils.checkInitParam(clientProperties);
         
-        initNamespace(properties);
-        this.configFilterChainManager = new ConfigFilterChainManager(properties);
-        ServerListManager serverListManager = new ServerListManager(properties);
+        initNamespace(clientProperties);
+        this.configFilterChainManager = new ConfigFilterChainManager(clientProperties.asProperties());
+        ConfigServerListManager serverListManager = new ConfigServerListManager(clientProperties);
         serverListManager.start();
         
-        this.worker = new ClientWorker(this.configFilterChainManager, serverListManager, properties);
+        this.worker = new ClientWorker(this.configFilterChainManager, serverListManager, clientProperties);
         // will be deleted in 2.0 later versions
         agent = new ServerHttpAgent(serverListManager);
         
     }
     
-    private void initNamespace(Properties properties) {
+    private void initNamespace(NacosClientProperties properties) {
         namespace = ParamUtil.parseNamespace(properties);
-        properties.put(PropertyKeyConst.NAMESPACE, namespace);
+        properties.setProperty(PropertyKeyConst.NAMESPACE, namespace);
     }
     
     @Override
@@ -97,14 +102,27 @@ public class NacosConfigService implements ConfigService {
     @Override
     public String getConfigAndSignListener(String dataId, String group, long timeoutMs, Listener listener)
             throws NacosException {
-        String content = getConfig(dataId, group, timeoutMs);
-        worker.addTenantListenersWithContent(dataId, group, content, Arrays.asList(listener));
-        return content;
+        group = StringUtils.isBlank(group) ? Constants.DEFAULT_GROUP : group.trim();
+        ConfigResponse configResponse = worker.getAgent()
+                .queryConfig(dataId, group, worker.getAgent().getTenant(), timeoutMs, false);
+        String content = configResponse.getContent();
+        String encryptedDataKey = configResponse.getEncryptedDataKey();
+        worker.addTenantListenersWithContent(dataId, group, content, encryptedDataKey,
+                Collections.singletonList(listener));
+        
+        // get a decryptContent, fix https://github.com/alibaba/nacos/issues/7039
+        ConfigResponse cr = new ConfigResponse();
+        cr.setDataId(dataId);
+        cr.setGroup(group);
+        cr.setContent(content);
+        cr.setEncryptedDataKey(encryptedDataKey);
+        configFilterChainManager.doFilter(null, cr);
+        return cr.getContent();
     }
     
     @Override
     public void addListener(String dataId, String group, Listener listener) throws NacosException {
-        worker.addTenantListeners(dataId, group, Arrays.asList(listener));
+        worker.addTenantListeners(dataId, group, Collections.singletonList(listener));
     }
     
     @Override
@@ -148,11 +166,15 @@ public class NacosConfigService implements ConfigService {
         cr.setTenant(tenant);
         cr.setGroup(group);
         
-        // use local config first
+        // We first try to use local failover content if exists.
+        // A config content for failover is not created by client program automatically,
+        // but is maintained by user.
+        // This is designed for certain scenario like client emergency reboot,
+        // changing config needed in the same time, while nacos server is down.
         String content = LocalConfigInfoProcessor.getFailover(worker.getAgentName(), dataId, group, tenant);
         if (content != null) {
-            LOGGER.warn("[{}] [get-config] get failover ok, dataId={}, group={}, tenant={}, config={}",
-                    worker.getAgentName(), dataId, group, tenant, ContentUtils.truncateContent(content));
+            LOGGER.warn("[{}] [get-config] get failover ok, dataId={}, group={}, tenant={}",
+                    worker.getAgentName(), dataId, group, tenant);
             cr.setContent(content);
             String encryptedDataKey = LocalEncryptedDataKeyProcessor
                     .getEncryptDataKeyFailover(agent.getName(), dataId, group, tenant);
@@ -177,13 +199,15 @@ public class NacosConfigService implements ConfigService {
             LOGGER.warn("[{}] [get-config] get from server error, dataId={}, group={}, tenant={}, msg={}",
                     worker.getAgentName(), dataId, group, tenant, ioe.toString());
         }
-        
-        LOGGER.warn("[{}] [get-config] get snapshot ok, dataId={}, group={}, tenant={}, config={}",
-                worker.getAgentName(), dataId, group, tenant, ContentUtils.truncateContent(content));
+
         content = LocalConfigInfoProcessor.getSnapshot(worker.getAgentName(), dataId, group, tenant);
+        if (content != null) {
+            LOGGER.warn("[{}] [get-config] get snapshot ok, dataId={}, group={}, tenant={}",
+                    worker.getAgentName(), dataId, group, tenant);
+        }
         cr.setContent(content);
         String encryptedDataKey = LocalEncryptedDataKeyProcessor
-                .getEncryptDataKeyFailover(agent.getName(), dataId, group, tenant);
+                .getEncryptDataKeySnapshot(agent.getName(), dataId, group, tenant);
         cr.setEncryptedDataKey(encryptedDataKey);
         configFilterChainManager.doFilter(null, cr);
         content = cr.getContent();
@@ -213,7 +237,7 @@ public class NacosConfigService implements ConfigService {
         cr.setType(type);
         configFilterChainManager.doFilter(cr, null);
         content = cr.getContent();
-        String encryptedDataKey = (String) cr.getParameter("encryptedDataKey");
+        String encryptedDataKey = cr.getEncryptedDataKey();
         
         return worker
                 .publishConfig(dataId, group, tenant, appName, tag, betaIps, content, encryptedDataKey, casMd5, type);
@@ -227,7 +251,12 @@ public class NacosConfigService implements ConfigService {
             return DOWN;
         }
     }
-    
+
+    @Override
+    public void addConfigFilter(IConfigFilter configFilter) {
+        configFilterChainManager.addFilter(configFilter);
+    }
+
     @Override
     public void shutDown() throws NacosException {
         worker.shutdown();

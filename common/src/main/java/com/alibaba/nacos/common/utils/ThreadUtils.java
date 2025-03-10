@@ -30,20 +30,10 @@ import java.util.concurrent.TimeUnit;
  */
 public final class ThreadUtils {
     
-    private static final int THREAD_MULTIPLER = 2;
-    
-    /**
-     * Wait.
-     *
-     * @param object load object
-     */
-    public static void objectWait(Object object) {
-        try {
-            object.wait();
-        } catch (InterruptedException ignore) {
-            Thread.interrupted();
-        }
+    private ThreadUtils() {
     }
+    
+    private static final int THREAD_MULTIPLER = 2;
     
     /**
      * Sleep.
@@ -107,7 +97,7 @@ public final class ThreadUtils {
      * @return thread count
      */
     public static int getSuitableThreadCount(int threadMultiple) {
-        final int coreCount = Runtime.getRuntime().availableProcessors();
+        final int coreCount = PropertyUtils.getProcessorsCount();
         int workerCount = 1;
         while (workerCount < coreCount * threadMultiple) {
             workerCount <<= 1;

@@ -16,6 +16,13 @@
 
 package com.alibaba.nacos.common.remote.client.grpc;
 
+import com.alibaba.nacos.api.ability.constant.AbilityMode;
+import com.alibaba.nacos.api.common.Constants;
+import com.alibaba.nacos.common.remote.client.RpcClientTlsConfig;
+import com.alibaba.nacos.common.utils.VersionUtils;
+
+import java.util.Map;
+
 /**
  * gRPC client for cluster.
  *
@@ -23,6 +30,8 @@ package com.alibaba.nacos.common.remote.client.grpc;
  * @version $Id: GrpcClusterClient.java, v 0.1 2020年09月07日 11:05 AM liuzunfei Exp $
  */
 public class GrpcClusterClient extends GrpcClient {
+    
+    private static final String CLUSTER_CLIENT_VERSION_PREFIX = "Nacos-Server:v";
     
     /**
      * Empty constructor.
@@ -33,9 +42,47 @@ public class GrpcClusterClient extends GrpcClient {
         super(name);
     }
     
+    /**
+     * Empty constructor.
+     *
+     * @param config of GrpcClientConfig.
+     */
+    public GrpcClusterClient(GrpcClientConfig config) {
+        super(config);
+    }
+
+    /**
+     * Constructor.
+     *
+     * @param name               name of client.
+     * @param threadPoolCoreSize .
+     * @param threadPoolMaxSize  .
+     * @param labels             .
+     */
+    public GrpcClusterClient(String name, Integer threadPoolCoreSize, Integer threadPoolMaxSize,
+            Map<String, String> labels) {
+        this(name, threadPoolCoreSize, threadPoolMaxSize, labels, null);
+    }
+    
+    public GrpcClusterClient(String name, Integer threadPoolCoreSize, Integer threadPoolMaxSize,
+            Map<String, String> labels, RpcClientTlsConfig tlsConfig) {
+        super(name, threadPoolCoreSize, threadPoolMaxSize, labels, tlsConfig);
+    }
+    
+    @Override
+    protected AbilityMode abilityMode() {
+        return AbilityMode.CLUSTER_CLIENT;
+    }
+    
+    @Override
+    protected String getClientVersion() {
+        return CLUSTER_CLIENT_VERSION_PREFIX + VersionUtils.version;
+    }
+    
     @Override
     public int rpcPortOffset() {
-        return 1001;
+        return Integer.parseInt(System.getProperty(GrpcConstants.NACOS_SERVER_GRPC_PORT_OFFSET_KEY,
+                String.valueOf(Constants.CLUSTER_GRPC_PORT_DEFAULT_OFFSET)));
     }
     
 }

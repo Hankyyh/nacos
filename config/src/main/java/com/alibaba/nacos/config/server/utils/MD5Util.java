@@ -17,7 +17,6 @@
 package com.alibaba.nacos.config.server.utils;
 
 import com.alibaba.nacos.config.server.constant.Constants;
-import com.alibaba.nacos.config.server.service.ConfigCacheService;
 import com.alibaba.nacos.core.utils.StringPool;
 import com.alibaba.nacos.common.utils.StringUtils;
 
@@ -51,18 +50,7 @@ public class MD5Util {
      */
     public static List<String> compareMd5(HttpServletRequest request, HttpServletResponse response,
             Map<String, String> clientMd5Map) {
-        List<String> changedGroupKeys = new ArrayList<String>();
-        String tag = request.getHeader("Vipserver-Tag");
-        for (Map.Entry<String, String> entry : clientMd5Map.entrySet()) {
-            String groupKey = entry.getKey();
-            String clientMd5 = entry.getValue();
-            String ip = RequestUtil.getRemoteIp(request);
-            boolean isUptodate = ConfigCacheService.isUptodate(groupKey, clientMd5, ip, tag);
-            if (!isUptodate) {
-                changedGroupKeys.add(groupKey);
-            }
-        }
-        return changedGroupKeys;
+        return Md5ComparatorDelegate.getInstance().compareMd5(request, response, clientMd5Map);
     }
     
     /**
@@ -118,13 +106,13 @@ public class MD5Util {
      */
     public static Map<String, String> getClientMd5Map(String configKeysString) {
         
-        Map<String, String> md5Map = new HashMap<String, String>(5);
+        Map<String, String> md5Map = new HashMap<>(5);
         
         if (null == configKeysString || "".equals(configKeysString)) {
             return md5Map;
         }
         int start = 0;
-        List<String> tmpList = new ArrayList<String>(3);
+        List<String> tmpList = new ArrayList<>(3);
         for (int i = start; i < configKeysString.length(); i++) {
             char c = configKeysString.charAt(i);
             if (c == WORD_SEPARATOR_CHAR) {
